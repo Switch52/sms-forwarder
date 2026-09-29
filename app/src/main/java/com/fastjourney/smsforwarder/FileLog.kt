@@ -18,14 +18,16 @@ object FileLog {
         val line = "[${fmt.format(Date())}] $entry"
         Log.d(TAG, entry)
 
-        try {
-            val file = logFile(context)
-            val existing = if (file.exists()) file.readLines() else emptyList()
-            val updated = (listOf(line) + existing).take(MAX_LINES)
-            file.writeText(updated.joinToString("\n"))
-        } catch (_: Exception) {}
+        synchronized(this) {
+            try {
+                val file = logFile(context)
+                val existing = if (file.exists()) file.readLines() else emptyList()
+                val updated = (listOf(line) + existing).take(MAX_LINES)
+                file.writeText(updated.joinToString("\n"))
+            } catch (_: Exception) {}
 
-        updatePrefsLog(context, line)
+            updatePrefsLog(context, line)
+        }
         context.sendBroadcast(Intent(ForwarderService.ACTION_LOG_UPDATED))
     }
 

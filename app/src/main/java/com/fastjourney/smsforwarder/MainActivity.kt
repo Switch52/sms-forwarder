@@ -72,6 +72,15 @@ class MainActivity : AppCompatActivity() {
         updateUI()
     }
 
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        handleIntentExtras(intent)
+        webhookUrlInput.setText(config.webhookUrl)
+        sim1Input.setText(config.sim1Number)
+        sim2Input.setText(config.sim2Number)
+        updateUI()
+    }
+
     override fun onResume() {
         super.onResume()
         registerReceiver(

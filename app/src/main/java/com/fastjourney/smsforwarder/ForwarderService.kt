@@ -8,6 +8,8 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.net.ConnectivityManager
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Base64
@@ -28,6 +30,7 @@ class ForwarderService : Service() {
 
     private lateinit var executor: ExecutorService
     private lateinit var wakeLock: PowerManager.WakeLock
+    private val connectivityReceiver = ConnectivityReceiver()
 
     override fun onCreate() {
         super.onCreate()
@@ -42,6 +45,11 @@ class ForwarderService : Service() {
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
         scheduleWatchdog()
+
+        registerReceiver(
+            connectivityReceiver,
+            IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION)
+        )
 
         FileLog.log(this, "Service started")
     }
@@ -64,6 +72,7 @@ class ForwarderService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        try { unregisterReceiver(connectivityReceiver) } catch (_: Exception) {}
         if (::wakeLock.isInitialized && wakeLock.isHeld) wakeLock.release()
         executor.shutdownNow()
 

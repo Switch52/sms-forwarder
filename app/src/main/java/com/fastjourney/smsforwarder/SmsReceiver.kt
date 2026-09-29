@@ -3,6 +3,7 @@ package com.fastjourney.smsforwarder
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.PowerManager
 import android.telephony.SmsMessage
 import android.telephony.SubscriptionManager
 import org.json.JSONObject
@@ -19,6 +20,12 @@ class SmsReceiver : BroadcastReceiver() {
 
         val config = Config(context)
         if (!config.serviceEnabled || !config.isConfigured()) return
+
+        val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        val wl = pm.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "SmsForwarder::SmsReceiveLock"
+        ).apply { acquire(30_000) }
 
         val bundle = intent.extras ?: return
         @Suppress("UNCHECKED_CAST")
@@ -56,6 +63,8 @@ class SmsReceiver : BroadcastReceiver() {
         )
 
         ForwarderService.enqueueWebhook(context, config.webhookUrl, payload)
+
+        if (wl.isHeld) wl.release()
     }
 
     private fun looksLikeOtp(message: String): Boolean {
