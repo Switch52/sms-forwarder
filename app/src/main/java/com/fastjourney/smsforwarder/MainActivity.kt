@@ -14,6 +14,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.textfield.TextInputEditText
 
 class MainActivity : AppCompatActivity() {
@@ -22,6 +23,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webhookUrlInput: TextInputEditText
     private lateinit var sim1Input: TextInputEditText
     private lateinit var sim2Input: TextInputEditText
+    private lateinit var authUsernameInput: TextInputEditText
+    private lateinit var authPasswordInput: TextInputEditText
+    private lateinit var otpFilterSwitch: MaterialSwitch
+    private lateinit var heartbeatSwitch: MaterialSwitch
     private lateinit var toggleButton: MaterialButton
     private lateinit var statusText: TextView
     private lateinit var logText: TextView
@@ -41,6 +46,10 @@ class MainActivity : AppCompatActivity() {
         webhookUrlInput = findViewById(R.id.webhookUrl)
         sim1Input = findViewById(R.id.sim1Number)
         sim2Input = findViewById(R.id.sim2Number)
+        authUsernameInput = findViewById(R.id.authUsername)
+        authPasswordInput = findViewById(R.id.authPassword)
+        otpFilterSwitch = findViewById(R.id.otpFilter)
+        heartbeatSwitch = findViewById(R.id.heartbeat)
         toggleButton = findViewById(R.id.toggleService)
         statusText = findViewById(R.id.statusText)
         logText = findViewById(R.id.logText)
@@ -50,7 +59,13 @@ class MainActivity : AppCompatActivity() {
         webhookUrlInput.setText(config.webhookUrl)
         sim1Input.setText(config.sim1Number)
         sim2Input.setText(config.sim2Number)
+        authUsernameInput.setText(config.authUsername)
+        authPasswordInput.setText(config.authPassword)
+        otpFilterSwitch.isChecked = config.otpFilterEnabled
+        heartbeatSwitch.isChecked = config.heartbeatEnabled
 
+        otpFilterSwitch.setOnCheckedChangeListener { _, checked -> config.otpFilterEnabled = checked }
+        heartbeatSwitch.setOnCheckedChangeListener { _, checked -> config.heartbeatEnabled = checked }
         toggleButton.setOnClickListener { toggleService() }
 
         requestPermissions()
@@ -78,6 +93,8 @@ class MainActivity : AppCompatActivity() {
         config.webhookUrl = webhookUrlInput.text.toString().trim()
         config.sim1Number = sim1Input.text.toString().trim()
         config.sim2Number = sim2Input.text.toString().trim()
+        config.authUsername = authUsernameInput.text.toString().trim()
+        config.authPassword = authPasswordInput.text.toString().trim()
     }
 
     private fun toggleService() {
@@ -89,7 +106,7 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Service stopped", Toast.LENGTH_SHORT).show()
         } else {
             if (!config.isConfigured()) {
-                Toast.makeText(this, "Enter webhook URL and at least SIM 1 number", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Enter webhook URL and at least one SIM number", Toast.LENGTH_LONG).show()
                 return
             }
             config.serviceEnabled = true
@@ -101,9 +118,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateUI() {
+        val queued = MessageQueue.size(this)
         if (config.serviceEnabled) {
             toggleButton.text = "Stop Service"
-            statusText.text = "Service running\nDevice ID: ${config.deviceId}\nWebhook: ${config.webhookUrl}\nSIM 1: ${config.sim1Number}\nSIM 2: ${config.sim2Number.ifBlank { "(not set)" }}"
+            statusText.text = buildString {
+                append("Service running")
+                append("\nDevice ID: ${config.deviceId}")
+                append("\nWebhook: ${config.webhookUrl}")
+                append("\nSIM 1: ${config.sim1Number.ifBlank { "(not set)" }}")
+                append("\nSIM 2: ${config.sim2Number.ifBlank { "(not set)" }}")
+                if (queued > 0) append("\nQueued: $queued messages pending")
+            }
         } else {
             toggleButton.text = "Start Service"
             statusText.text = "Service stopped"
@@ -114,6 +139,7 @@ class MainActivity : AppCompatActivity() {
         val log = getSharedPreferences("sms_forwarder", MODE_PRIVATE)
             .getString("log", null)
         logText.text = log ?: "No messages forwarded yet"
+        updateUI()
     }
 
     private fun handleIntentExtras(intent: Intent?) {

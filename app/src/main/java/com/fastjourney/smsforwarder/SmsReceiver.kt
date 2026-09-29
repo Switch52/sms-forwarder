@@ -3,10 +3,8 @@ package com.fastjourney.smsforwarder
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.telephony.SmsMessage
 import android.telephony.SubscriptionManager
-import android.util.Log
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -23,6 +21,7 @@ class SmsReceiver : BroadcastReceiver() {
         if (!config.serviceEnabled || !config.isConfigured()) return
 
         val bundle = intent.extras ?: return
+        @Suppress("UNCHECKED_CAST")
         val pdus = bundle.get("pdus") as? Array<*> ?: return
         val format = bundle.getString("format", "3gpp")
 
@@ -38,17 +37,33 @@ class SmsReceiver : BroadcastReceiver() {
             sender = sms.originatingAddress ?: ""
         }
 
+        val message = messageBody.toString()
+
+        if (config.otpFilterEnabled && !looksLikeOtp(message)) {
+            FileLog.log(context, "SKIP SIM${simIndex + 1} from $sender — not OTP")
+            return
+        }
+
+        val preview = message.take(40).replace("\n", " ")
+        FileLog.log(context, "SMS SIM${simIndex + 1} ($recipient) from $sender: \"$preview\"")
+
         val payload = buildPayload(
             deviceId = config.deviceId,
-            message = messageBody.toString(),
+            message = message,
             sender = sender,
             recipient = recipient,
             simNumber = simIndex + 1
         )
 
         ForwarderService.enqueueWebhook(context, config.webhookUrl, payload)
+    }
 
-        Log.d("SmsForwarder", "SMS from $sender on SIM${simIndex + 1} ($recipient) forwarded")
+    private fun looksLikeOtp(message: String): Boolean {
+        val lower = message.lowercase()
+        val hasKeyword = listOf("otp", "code", "verification", "verify", "pin", "password", "تحقق")
+            .any { lower.contains(it) }
+        val hasDigitBlock = Regex("\\b\\d{4,8}\\b").containsMatchIn(message)
+        return hasKeyword || hasDigitBlock
     }
 
     private fun detectSimSlot(context: Context, intent: Intent): Int {
