@@ -8,13 +8,14 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.view.View
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.google.android.material.button.MaterialButton
-import com.google.android.material.materialswitch.MaterialSwitch
+import com.google.android.material.card.MaterialCardView
 import com.google.android.material.textfield.TextInputEditText
 
 class MainActivity : AppCompatActivity() {
@@ -25,11 +26,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sim2Input: TextInputEditText
     private lateinit var authUsernameInput: TextInputEditText
     private lateinit var authPasswordInput: TextInputEditText
-    private lateinit var otpFilterSwitch: MaterialSwitch
-    private lateinit var heartbeatSwitch: MaterialSwitch
     private lateinit var toggleButton: MaterialButton
     private lateinit var statusText: TextView
     private lateinit var logText: TextView
+    private lateinit var permissionWarning: MaterialCardView
+    private lateinit var permissionDetails: TextView
+    private lateinit var grantPermissions: MaterialButton
 
     private val logReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -48,11 +50,12 @@ class MainActivity : AppCompatActivity() {
         sim2Input = findViewById(R.id.sim2Number)
         authUsernameInput = findViewById(R.id.authUsername)
         authPasswordInput = findViewById(R.id.authPassword)
-        otpFilterSwitch = findViewById(R.id.otpFilter)
-        heartbeatSwitch = findViewById(R.id.heartbeat)
         toggleButton = findViewById(R.id.toggleService)
         statusText = findViewById(R.id.statusText)
         logText = findViewById(R.id.logText)
+        permissionWarning = findViewById(R.id.permissionWarning)
+        permissionDetails = findViewById(R.id.permissionDetails)
+        grantPermissions = findViewById(R.id.grantPermissions)
 
         handleIntentExtras(intent)
 
@@ -61,12 +64,9 @@ class MainActivity : AppCompatActivity() {
         sim2Input.setText(config.sim2Number)
         authUsernameInput.setText(config.authUsername)
         authPasswordInput.setText(config.authPassword)
-        otpFilterSwitch.isChecked = config.otpFilterEnabled
-        heartbeatSwitch.isChecked = config.heartbeatEnabled
 
-        otpFilterSwitch.setOnCheckedChangeListener { _, checked -> config.otpFilterEnabled = checked }
-        heartbeatSwitch.setOnCheckedChangeListener { _, checked -> config.heartbeatEnabled = checked }
         toggleButton.setOnClickListener { toggleService() }
+        grantPermissions.setOnClickListener { requestPermissions() }
 
         requestPermissions()
         updateUI()
@@ -98,6 +98,11 @@ class MainActivity : AppCompatActivity() {
         saveConfig()
     }
 
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        updateUI()
+    }
+
     private fun saveConfig() {
         config.webhookUrl = webhookUrlInput.text.toString().trim()
         config.sim1Number = sim1Input.text.toString().trim()
@@ -126,8 +131,42 @@ class MainActivity : AppCompatActivity() {
         updateUI()
     }
 
+    private fun getMissingPermissions(): List<String> {
+        val missing = mutableListOf<String>()
+
+        val required = mutableListOf(
+            Manifest.permission.RECEIVE_SMS,
+            Manifest.permission.READ_SMS,
+            Manifest.permission.SEND_SMS,
+            Manifest.permission.READ_PHONE_STATE,
+        )
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            required.add(Manifest.permission.POST_NOTIFICATIONS)
+            required.add(Manifest.permission.READ_PHONE_NUMBERS)
+        }
+
+        for (p in required) {
+            if (ContextCompat.checkSelfPermission(this, p) != PackageManager.PERMISSION_GRANTED) {
+                missing.add(p)
+            }
+        }
+
+        return missing
+    }
+
     private fun updateUI() {
         val queued = MessageQueue.size(this)
+        val missing = getMissingPermissions()
+
+        if (missing.isNotEmpty()) {
+            permissionWarning.visibility = View.VISIBLE
+            val names = missing.map { it.substringAfterLast(".") }
+            permissionDetails.text = "Missing: ${names.joinToString(", ")}\nSMS forwarding will NOT work without these permissions."
+        } else {
+            permissionWarning.visibility = View.GONE
+        }
+
         if (config.serviceEnabled) {
             toggleButton.text = "Stop Service"
             statusText.text = buildString {
@@ -137,6 +176,7 @@ class MainActivity : AppCompatActivity() {
                 append("\nSIM 1: ${config.sim1Number.ifBlank { "(not set)" }}")
                 append("\nSIM 2: ${config.sim2Number.ifBlank { "(not set)" }}")
                 if (queued > 0) append("\nQueued: $queued messages pending")
+                if (missing.isNotEmpty()) append("\nWARNING: ${missing.size} permissions missing!")
             }
         } else {
             toggleButton.text = "Start Service"
@@ -169,36 +209,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun requestPermissions() {
-        val needed = mutableListOf<String>()
-
-        val permissions = arrayOf(
-            Manifest.permission.RECEIVE_SMS,
-            Manifest.permission.READ_SMS,
-            Manifest.permission.SEND_SMS,
-            Manifest.permission.READ_PHONE_STATE,
-        )
-
-        for (p in permissions) {
-            if (ContextCompat.checkSelfPermission(this, p) != PackageManager.PERMISSION_GRANTED) {
-                needed.add(p)
-            }
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                != PackageManager.PERMISSION_GRANTED
-            ) {
-                needed.add(Manifest.permission.POST_NOTIFICATIONS)
-            }
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_NUMBERS)
-                != PackageManager.PERMISSION_GRANTED
-            ) {
-                needed.add(Manifest.permission.READ_PHONE_NUMBERS)
-            }
-        }
-
-        if (needed.isNotEmpty()) {
-            ActivityCompat.requestPermissions(this, needed.toTypedArray(), 100)
+        val missing = getMissingPermissions()
+        if (missing.isNotEmpty()) {
+            ActivityCompat.requestPermissions(this, missing.toTypedArray(), 100)
         }
     }
 }

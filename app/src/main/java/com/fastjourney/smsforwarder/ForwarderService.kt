@@ -18,11 +18,6 @@ import org.json.JSONObject
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.TimeZone
-import java.util.UUID
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -56,7 +51,6 @@ class ForwarderService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_HEARTBEAT -> executor.execute { sendHeartbeat() }
             ACTION_FLUSH_QUEUE -> executor.execute { flushQueue() }
             else -> {
                 val webhookUrl = intent?.getStringExtra(EXTRA_WEBHOOK_URL)
@@ -98,20 +92,22 @@ class ForwarderService : Service() {
             JSONObject(payload).getJSONObject("payload").optInt("simNumber", 0)
         } catch (_: Exception) { 0 }
 
+        FileLog.log(this, ">> POST attempt to $webhookUrl")
+
         while (attempts < maxAttempts) {
             try {
                 val code = doPost(webhookUrl, payload, config)
 
                 if (code in 200..299) {
-                    FileLog.log(this, "→ SENT SIM$simNum from $sender (HTTP $code)")
+                    FileLog.log(this, "-> SENT SIM$simNum from $sender (HTTP $code)")
                     flushQueue()
                     return
                 }
 
-                Log.w(TAG, "Webhook returned HTTP $code, attempt ${attempts + 1}")
+                FileLog.log(this, "!! Webhook HTTP $code, attempt ${attempts + 1}/$maxAttempts")
                 attempts++
             } catch (e: Exception) {
-                Log.e(TAG, "Webhook failed, attempt ${attempts + 1}", e)
+                FileLog.log(this, "!! Webhook error: ${e.javaClass.simpleName}: ${e.message}, attempt ${attempts + 1}/$maxAttempts")
                 attempts++
                 if (attempts < maxAttempts) Thread.sleep(2000L * attempts)
             }
@@ -119,7 +115,7 @@ class ForwarderService : Service() {
 
         MessageQueue.enqueue(this, payload)
         val queued = MessageQueue.size(this)
-        FileLog.log(this, "→ QUEUED SIM$simNum from $sender ($queued pending)")
+        FileLog.log(this, "-> QUEUED SIM$simNum from $sender ($queued pending)")
     }
 
     private fun flushQueue() {
@@ -143,35 +139,6 @@ class ForwarderService : Service() {
         val remaining = MessageQueue.size(this)
         if (remaining > 0) {
             FileLog.log(this, "Queue flush incomplete, $remaining still pending")
-        }
-    }
-
-    private fun sendHeartbeat() {
-        val config = Config(this)
-        if (!config.heartbeatEnabled || config.webhookUrl.isBlank()) return
-
-        val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US)
-        isoFormat.timeZone = TimeZone.getDefault()
-
-        val payload = JSONObject().apply {
-            put("deviceId", config.deviceId)
-            put("event", "heartbeat")
-            put("id", UUID.randomUUID().toString())
-            put("payload", JSONObject().apply {
-                put("sim1", config.sim1Number.ifBlank { null })
-                put("sim2", config.sim2Number.ifBlank { null })
-                put("queueSize", MessageQueue.size(this@ForwarderService))
-                put("timestamp", isoFormat.format(Date()))
-            })
-        }.toString()
-
-        try {
-            val code = doPost(config.webhookUrl, payload, config)
-            FileLog.log(this, "♥ Heartbeat (HTTP $code, queue: ${MessageQueue.size(this)})")
-
-            if (code in 200..299) flushQueue()
-        } catch (e: Exception) {
-            FileLog.log(this, "♥ Heartbeat failed: ${e.message}")
         }
     }
 
@@ -264,7 +231,6 @@ class ForwarderService : Service() {
         const val EXTRA_WEBHOOK_URL = "webhook_url"
         const val EXTRA_PAYLOAD = "payload"
         const val ACTION_LOG_UPDATED = "com.fastjourney.smsforwarder.LOG_UPDATED"
-        const val ACTION_HEARTBEAT = "com.fastjourney.smsforwarder.HEARTBEAT"
         const val ACTION_FLUSH_QUEUE = "com.fastjourney.smsforwarder.FLUSH_QUEUE"
         private const val TAG = "SmsForwarder"
 
@@ -282,13 +248,6 @@ class ForwarderService : Service() {
 
         fun stop(context: Context) {
             context.stopService(Intent(context, ForwarderService::class.java))
-        }
-
-        fun heartbeat(context: Context) {
-            val intent = Intent(context, ForwarderService::class.java).apply {
-                action = ACTION_HEARTBEAT
-            }
-            context.startForegroundService(intent)
         }
 
         fun flushQueue(context: Context) {

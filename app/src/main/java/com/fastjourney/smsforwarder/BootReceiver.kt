@@ -10,14 +10,7 @@ class BootReceiver : BroadcastReceiver() {
         val config = Config(context)
         if (!config.serviceEnabled || !config.isConfigured()) return
 
-        when (intent.action) {
-            "com.fastjourney.smsforwarder.WATCHDOG" -> {
-                ForwarderService.start(context)
-                if (config.heartbeatEnabled) {
-                    ForwarderService.heartbeat(context)
-                }
-            }
-            else -> ForwarderService.start(context)
-        }
+        FileLog.log(context, ">> BootReceiver: ${intent.action}")
+        ForwarderService.start(context)
     }
 }

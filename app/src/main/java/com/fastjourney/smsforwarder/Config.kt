@@ -33,14 +33,6 @@ class Config(context: Context) {
         get() = prefs.getString("auth_password", "") ?: ""
         set(value) = prefs.edit().putString("auth_password", value).apply()
 
-    var otpFilterEnabled: Boolean
-        get() = prefs.getBoolean("otp_filter", false)
-        set(value) = prefs.edit().putBoolean("otp_filter", value).apply()
-
-    var heartbeatEnabled: Boolean
-        get() = prefs.getBoolean("heartbeat", true)
-        set(value) = prefs.edit().putBoolean("heartbeat", value).apply()
-
     var serviceEnabled: Boolean
         get() = prefs.getBoolean("service_enabled", false)
         set(value) = prefs.edit().putBoolean("service_enabled", value).apply()
