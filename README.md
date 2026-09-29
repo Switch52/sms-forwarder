@@ -8,7 +8,15 @@ You tell the app which phone number belongs to each SIM slot, and it includes th
 
 **[Download the latest APK](https://github.com/Switch52/sms-forwarder/releases/latest/download/app-release.apk)** -- open this link on your Android phone to download the app directly.
 
-When installing, your phone may ask you to allow "Install from unknown sources" -- tap Settings and enable it, then go back and tap Install.
+**Before installing**, you may need to do two things:
+
+1. **Allow "Install from unknown sources"** -- when prompted, tap Settings and enable it, then go back and tap Install.
+2. **Temporarily disable Play Protect** -- Google blocks sideloaded apps that use SMS permissions. To install:
+   - Open the **Google Play Store** app
+   - Tap your **profile icon** (top right) → **Play Protect** → **gear icon** (top right)
+   - Turn off **Scan apps with Play Protect**
+   - Install the APK
+   - Turn Play Protect back on after installing
 
 ## Setup
 
