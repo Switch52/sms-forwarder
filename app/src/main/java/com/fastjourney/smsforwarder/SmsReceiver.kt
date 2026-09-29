@@ -27,44 +27,46 @@ class SmsReceiver : BroadcastReceiver() {
             "SmsForwarder::SmsReceiveLock"
         ).apply { acquire(30_000) }
 
-        val bundle = intent.extras ?: return
-        @Suppress("UNCHECKED_CAST")
-        val pdus = bundle.get("pdus") as? Array<*> ?: return
-        val format = bundle.getString("format", "3gpp")
+        try {
+            val bundle = intent.extras ?: return
+            @Suppress("UNCHECKED_CAST")
+            val pdus = bundle.get("pdus") as? Array<*> ?: return
+            val format = bundle.getString("format", "3gpp")
 
-        val simIndex = detectSimSlot(context, intent)
-        val recipient = config.getNumberForSim(simIndex)
+            val simIndex = detectSimSlot(context, intent)
+            val recipient = config.getNumberForSim(simIndex)
 
-        val messageBody = StringBuilder()
-        var sender = ""
+            val messageBody = StringBuilder()
+            var sender = ""
 
-        for (pdu in pdus) {
-            val sms = SmsMessage.createFromPdu(pdu as ByteArray, format)
-            messageBody.append(sms.messageBody)
-            sender = sms.originatingAddress ?: ""
+            for (pdu in pdus) {
+                val sms = SmsMessage.createFromPdu(pdu as ByteArray, format)
+                messageBody.append(sms.messageBody)
+                sender = sms.originatingAddress ?: ""
+            }
+
+            val message = messageBody.toString()
+
+            if (config.otpFilterEnabled && !looksLikeOtp(message)) {
+                FileLog.log(context, "SKIP SIM${simIndex + 1} from $sender — not OTP")
+                return
+            }
+
+            val preview = message.take(40).replace("\n", " ")
+            FileLog.log(context, "SMS SIM${simIndex + 1} ($recipient) from $sender: \"$preview\"")
+
+            val payload = buildPayload(
+                deviceId = config.deviceId,
+                message = message,
+                sender = sender,
+                recipient = recipient,
+                simNumber = simIndex + 1
+            )
+
+            ForwarderService.enqueueWebhook(context, config.webhookUrl, payload)
+        } finally {
+            if (wl.isHeld) wl.release()
         }
-
-        val message = messageBody.toString()
-
-        if (config.otpFilterEnabled && !looksLikeOtp(message)) {
-            FileLog.log(context, "SKIP SIM${simIndex + 1} from $sender — not OTP")
-            return
-        }
-
-        val preview = message.take(40).replace("\n", " ")
-        FileLog.log(context, "SMS SIM${simIndex + 1} ($recipient) from $sender: \"$preview\"")
-
-        val payload = buildPayload(
-            deviceId = config.deviceId,
-            message = message,
-            sender = sender,
-            recipient = recipient,
-            simNumber = simIndex + 1
-        )
-
-        ForwarderService.enqueueWebhook(context, config.webhookUrl, payload)
-
-        if (wl.isHeld) wl.release()
     }
 
     private fun looksLikeOtp(message: String): Boolean {
