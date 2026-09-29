@@ -15,9 +15,19 @@ android {
         versionName = "1.0"
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file(System.getenv("KEYSTORE_PATH") ?: "../release.keystore")
+            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "smsforwarder2024"
+            keyAlias = System.getenv("KEY_ALIAS") ?: "sms-forwarder"
+            keyPassword = System.getenv("KEY_PASSWORD") ?: "smsforwarder2024"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 

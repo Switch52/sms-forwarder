@@ -6,7 +6,7 @@ You tell the app which phone number belongs to each SIM slot, and it includes th
 
 ## Download
 
-**[Download the latest APK](https://github.com/Switch52/sms-forwarder/releases/latest/download/app-debug.apk)** -- open this link on your Android phone to download the app directly.
+**[Download the latest APK](https://github.com/Switch52/sms-forwarder/releases/latest/download/app-release.apk)** -- open this link on your Android phone to download the app directly.
 
 When installing, your phone may ask you to allow "Install from unknown sources" -- tap Settings and enable it, then go back and tap Install.
 
