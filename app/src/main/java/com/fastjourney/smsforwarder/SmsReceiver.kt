@@ -95,46 +95,106 @@ class SmsReceiver : BroadcastReceiver() {
     private fun detectSimSlot(context: Context, intent: Intent): Int {
         val extras = intent.extras ?: return 0
 
-        val subId = when {
-            extras.containsKey("android.telephony.extra.SUBSCRIPTION_INDEX") ->
-                extras.getInt("android.telephony.extra.SUBSCRIPTION_INDEX", -1)
-            extras.containsKey("subscription") ->
-                extras.getInt("subscription", -1)
-            else -> -1
+        // Dump all int extras for debugging SIM detection on unknown OEMs
+        val intDump = StringBuilder()
+        for (key in extras.keySet()) {
+            val v = try { extras.getInt(key, -999) } catch (_: Exception) { -999 }
+            if (v != -999) intDump.append("$key=$v ")
+        }
+        FileLog.log(context, ">> SIM extras (ints): $intDump")
+
+        // Try subscription ID from standard and OEM keys
+        val subKeys = listOf(
+            "android.telephony.extra.SUBSCRIPTION_INDEX",
+            "subscription",
+            "sub_id",
+            "simnum",
+            "com.android.phone.extra.subscription"
+        )
+        var subId = -1
+        for (key in subKeys) {
+            if (extras.containsKey(key)) {
+                subId = extras.getInt(key, -1)
+                if (subId >= 0) {
+                    FileLog.log(context, ">> SIM detect: subId=$subId from key=$key")
+                    break
+                }
+            }
         }
 
-        FileLog.log(context, ">> SIM detect: subId=$subId")
-
+        // Map subscription ID to slot index via SubscriptionManager
         if (subId >= 0) {
             try {
                 val subManager = context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE)
                     as? SubscriptionManager
                 val subInfo = subManager?.getActiveSubscriptionInfo(subId)
                 if (subInfo != null) {
-                    FileLog.log(context, ">> SIM detect: subInfo.slotIndex=${subInfo.simSlotIndex}")
+                    FileLog.log(context, ">> SIM detect: subInfo.slotIndex=${subInfo.simSlotIndex}, displayName=${subInfo.displayName}")
                     return subInfo.simSlotIndex
+                } else {
+                    // subId might BE the slot index on some OEMs
+                    FileLog.log(context, ">> SIM detect: no subInfo for subId=$subId, trying as slot index")
+                    if (subId <= 1) return subId
                 }
             } catch (e: SecurityException) {
-                FileLog.log(context, "!! SIM detect: SecurityException (missing READ_PHONE_STATE?)")
+                FileLog.log(context, "!! SIM detect: SecurityException — READ_PHONE_STATE missing")
+                // Fall through to slot key detection
             }
         }
 
+        // Try direct slot index keys (including OEM-specific ones)
         val slotKeys = listOf(
             "android.telephony.extra.SLOT_INDEX",
-            "slot", "simId", "simSlot", "phone",
-            "com.android.phone.extra.slot"
+            "slot",
+            "slotId",
+            "slotIdx",
+            "simId",
+            "simSlot",
+            "simNum",
+            "phone",
+            "com.android.phone.extra.slot",
+            // Oppo / ColorOS / Realme
+            "simslot",
+            "sim_slot",
+            "slot_id",
+            // Xiaomi / MIUI
+            "extra_slot_id",
+            "slot_index",
+            // Samsung
+            "sim_id",
+            // Huawei
+            "simPosition",
+            "sim_position"
         )
         for (key in slotKeys) {
             if (extras.containsKey(key)) {
                 val slot = extras.getInt(key, -1)
-                if (slot >= 0) {
-                    FileLog.log(context, ">> SIM detect: found via $key=$slot")
+                if (slot >= 0 && slot <= 1) {
+                    FileLog.log(context, ">> SIM detect: slot=$slot from key=$key")
                     return slot
                 }
             }
         }
 
-        FileLog.log(context, ">> SIM detect: defaulting to slot 0")
+        // Last resort: try to match subscription ID to active subscriptions list
+        if (subId >= 0) {
+            try {
+                val subManager = context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE)
+                    as? SubscriptionManager
+                val subs = subManager?.activeSubscriptionInfoList
+                if (subs != null) {
+                    for ((idx, sub) in subs.withIndex()) {
+                        if (sub.subscriptionId == subId) {
+                            FileLog.log(context, ">> SIM detect: matched subId=$subId to list index=$idx, slotIndex=${sub.simSlotIndex}")
+                            return sub.simSlotIndex
+                        }
+                    }
+                    FileLog.log(context, ">> SIM detect: ${subs.size} active subs, none matched subId=$subId")
+                }
+            } catch (_: SecurityException) {}
+        }
+
+        FileLog.log(context, ">> SIM detect: FAILED — defaulting to slot 0")
         return 0
     }
 

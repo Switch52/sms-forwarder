@@ -6,8 +6,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import android.view.View
 import android.widget.TextView
 import android.widget.Toast
@@ -66,9 +69,13 @@ class MainActivity : AppCompatActivity() {
         authPasswordInput.setText(config.authPassword)
 
         toggleButton.setOnClickListener { toggleService() }
-        grantPermissions.setOnClickListener { requestPermissions() }
+        grantPermissions.setOnClickListener {
+            requestPermissions()
+            requestBatteryOptimizationExemption()
+        }
 
         requestPermissions()
+        requestBatteryOptimizationExemption()
         updateUI()
     }
 
@@ -131,6 +138,21 @@ class MainActivity : AppCompatActivity() {
         updateUI()
     }
 
+    private fun isBatteryOptimized(): Boolean {
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        return !pm.isIgnoringBatteryOptimizations(packageName)
+    }
+
+    private fun requestBatteryOptimizationExemption() {
+        if (!isBatteryOptimized()) return
+        try {
+            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                data = Uri.parse("package:$packageName")
+            }
+            startActivity(intent)
+        } catch (_: Exception) {}
+    }
+
     private fun getMissingPermissions(): List<String> {
         val missing = mutableListOf<String>()
 
@@ -158,11 +180,19 @@ class MainActivity : AppCompatActivity() {
     private fun updateUI() {
         val queued = MessageQueue.size(this)
         val missing = getMissingPermissions()
+        val batteryOptimized = isBatteryOptimized()
 
-        if (missing.isNotEmpty()) {
+        if (missing.isNotEmpty() || batteryOptimized) {
             permissionWarning.visibility = View.VISIBLE
-            val names = missing.map { it.substringAfterLast(".") }
-            permissionDetails.text = "Missing: ${names.joinToString(", ")}\nSMS forwarding will NOT work without these permissions."
+            val parts = mutableListOf<String>()
+            if (missing.isNotEmpty()) {
+                val names = missing.map { it.substringAfterLast(".") }
+                parts.add("Missing permissions: ${names.joinToString(", ")}")
+            }
+            if (batteryOptimized) {
+                parts.add("Battery optimization is ON — the app WILL be killed in the background. Tap Grant Permissions to fix.")
+            }
+            permissionDetails.text = parts.joinToString("\n\n")
         } else {
             permissionWarning.visibility = View.GONE
         }
@@ -177,6 +207,7 @@ class MainActivity : AppCompatActivity() {
                 append("\nSIM 2: ${config.sim2Number.ifBlank { "(not set)" }}")
                 if (queued > 0) append("\nQueued: $queued messages pending")
                 if (missing.isNotEmpty()) append("\nWARNING: ${missing.size} permissions missing!")
+                if (batteryOptimized) append("\nWARNING: Battery optimization will kill this app!")
             }
         } else {
             toggleButton.text = "Start Service"
