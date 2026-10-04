@@ -25,16 +25,38 @@ You tell the app which phone number belongs to each SIM slot, and it includes th
 3. Enter the phone number for **SIM 1** and/or **SIM 2** (use the full number with country code, e.g. `+971501234567`)
 4. Tap **Start Service**
 5. Grant all permissions when prompted (SMS, Phone, Notifications)
+6. **Disable battery optimization** -- see the section below
 
 That's it. The app will now forward every incoming SMS to your webhook.
+
+## IMPORTANT: Battery / Auto-Start Settings
+
+Android phone manufacturers aggressively kill background apps. You **must** change these settings or the app **will stop working** after a few hours.
+
+### Realme / Oppo / OnePlus (ColorOS / RealmeUI)
+Settings → Battery → App Launch Management → SMS Forwarder → switch to **Manual** → enable **Auto Launch**, **Run in Background**, **Keep Alive**
+
+### Xiaomi / Redmi / POCO (MIUI / HyperOS)
+Settings → Apps → Manage Apps → SMS Forwarder → **Autostart ON**. Also: Security → Battery Saver → SMS Forwarder → **No restrictions**
+
+### Samsung (One UI)
+Settings → Battery → Background usage limits → **Never sleeping apps** → add SMS Forwarder
+
+### Infinix / Tecno / itel
+Phone Master → App Management → Auto-start management → enable SMS Forwarder
+
+### Huawei / Honor (EMUI)
+Settings → Battery → App launch → SMS Forwarder → switch to **Manual** → enable **Auto-launch**, **Secondary launch**, **Run in background**
+
+### All phones
+Also lock the app in recent apps: open the app, tap the recents button (square), swipe down on SMS Forwarder or tap the lock icon to prevent it from being cleared.
 
 ## Features
 
 - **Dual SIM support** -- assign a phone number to each SIM slot so the server knows which number received the message
 - **Runs in the background** -- keeps forwarding even when the app is closed or the phone restarts
+- **Survives app kills** -- SMS forwarding happens directly in the broadcast receiver, independent of the background service
 - **Offline queue** -- if the phone loses internet, messages are saved and sent when the connection comes back (up to 100 messages)
-- **OTP filter** -- optionally forward only OTP/verification messages and skip everything else
-- **Heartbeat** -- optional ping every 5 minutes so you know the phone is still online
 - **Webhook auth** -- optional username/password for webhook authentication
 - **Works with any phone number format** -- international, local, with or without `+`
 
