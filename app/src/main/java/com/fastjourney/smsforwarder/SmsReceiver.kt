@@ -6,7 +6,11 @@ import android.content.Intent
 import android.os.PowerManager
 import android.telephony.SmsMessage
 import android.telephony.SubscriptionManager
+import android.util.Base64
 import org.json.JSONObject
+import java.io.OutputStreamWriter
+import java.net.HttpURLConnection
+import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -33,11 +37,13 @@ class SmsReceiver : BroadcastReceiver() {
             return
         }
 
+        val pendingResult = goAsync()
+
         val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         val wl = pm.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
             "SmsForwarder::SmsReceiveLock"
-        ).apply { acquire(30_000) }
+        ).apply { acquire(60_000) }
 
         try {
             val bundle = intent.extras
@@ -83,19 +89,61 @@ class SmsReceiver : BroadcastReceiver() {
                 simNumber = simIndex + 1
             )
 
-            FileLog.log(context, ">> Payload built, forwarding to ${config.webhookUrl}")
-            ForwarderService.enqueueWebhook(context, config.webhookUrl, payload)
+            val webhookUrl = config.webhookUrl
+            FileLog.log(context, ">> Posting directly to $webhookUrl (bypassing service)")
+
+            Thread {
+                try {
+                    val code = doPost(webhookUrl, payload, config)
+
+                    if (code in 200..299) {
+                        FileLog.log(context, "-> SENT SIM${simIndex + 1} from $sender (HTTP $code)")
+                    } else {
+                        MessageQueue.enqueue(context, payload)
+                        FileLog.log(context, "-> QUEUED SIM${simIndex + 1} from $sender (HTTP $code)")
+                    }
+                } catch (e: Exception) {
+                    MessageQueue.enqueue(context, payload)
+                    FileLog.log(context, "-> QUEUED SIM${simIndex + 1} from $sender (${e.javaClass.simpleName}: ${e.message})")
+                } finally {
+                    if (wl.isHeld) wl.release()
+                    pendingResult.finish()
+                }
+
+                try { ForwarderService.start(context) } catch (_: Exception) {}
+            }.start()
+
         } catch (e: Exception) {
             FileLog.log(context, "!! CRASH in SmsReceiver: ${e.javaClass.simpleName}: ${e.message}")
-        } finally {
             if (wl.isHeld) wl.release()
+            pendingResult.finish()
         }
+    }
+
+    private fun doPost(webhookUrl: String, payload: String, config: Config): Int {
+        val url = URL(webhookUrl)
+        val conn = url.openConnection() as HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.setRequestProperty("Content-Type", "application/json")
+        conn.connectTimeout = 15_000
+        conn.readTimeout = 15_000
+        conn.doOutput = true
+
+        if (config.hasAuth()) {
+            val creds = "${config.authUsername}:${config.authPassword}"
+            val encoded = Base64.encodeToString(creds.toByteArray(), Base64.NO_WRAP)
+            conn.setRequestProperty("Authorization", "Basic $encoded")
+        }
+
+        OutputStreamWriter(conn.outputStream).use { it.write(payload) }
+        val code = conn.responseCode
+        conn.disconnect()
+        return code
     }
 
     private fun detectSimSlot(context: Context, intent: Intent): Int {
         val extras = intent.extras ?: return 0
 
-        // Dump all int extras for debugging SIM detection on unknown OEMs
         val intDump = StringBuilder()
         for (key in extras.keySet()) {
             val v = try { extras.getInt(key, -999) } catch (_: Exception) { -999 }
@@ -103,7 +151,6 @@ class SmsReceiver : BroadcastReceiver() {
         }
         FileLog.log(context, ">> SIM extras (ints): $intDump")
 
-        // Try subscription ID from standard and OEM keys
         val subKeys = listOf(
             "android.telephony.extra.SUBSCRIPTION_INDEX",
             "subscription",
@@ -122,7 +169,6 @@ class SmsReceiver : BroadcastReceiver() {
             }
         }
 
-        // Map subscription ID to slot index via SubscriptionManager
         if (subId >= 0) {
             try {
                 val subManager = context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE)
@@ -132,17 +178,14 @@ class SmsReceiver : BroadcastReceiver() {
                     FileLog.log(context, ">> SIM detect: subInfo.slotIndex=${subInfo.simSlotIndex}, displayName=${subInfo.displayName}")
                     return subInfo.simSlotIndex
                 } else {
-                    // subId might BE the slot index on some OEMs
                     FileLog.log(context, ">> SIM detect: no subInfo for subId=$subId, trying as slot index")
                     if (subId <= 1) return subId
                 }
             } catch (e: SecurityException) {
                 FileLog.log(context, "!! SIM detect: SecurityException — READ_PHONE_STATE missing")
-                // Fall through to slot key detection
             }
         }
 
-        // Try direct slot index keys (including OEM-specific ones)
         val slotKeys = listOf(
             "android.telephony.extra.SLOT_INDEX",
             "slot",
@@ -153,16 +196,12 @@ class SmsReceiver : BroadcastReceiver() {
             "simNum",
             "phone",
             "com.android.phone.extra.slot",
-            // Oppo / ColorOS / Realme
             "simslot",
             "sim_slot",
             "slot_id",
-            // Xiaomi / MIUI
             "extra_slot_id",
             "slot_index",
-            // Samsung
             "sim_id",
-            // Huawei
             "simPosition",
             "sim_position"
         )
@@ -176,7 +215,6 @@ class SmsReceiver : BroadcastReceiver() {
             }
         }
 
-        // Last resort: try to match subscription ID to active subscriptions list
         if (subId >= 0) {
             try {
                 val subManager = context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE)
