@@ -6,11 +6,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.PowerManager
-import android.provider.Settings
 import android.view.View
 import android.widget.TextView
 import android.widget.Toast
@@ -36,6 +33,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var permissionWarning: MaterialCardView
     private lateinit var permissionDetails: TextView
     private lateinit var grantPermissions: MaterialButton
+    private lateinit var keepAliveWarning: MaterialCardView
+    private lateinit var keepAliveDetails: TextView
+    private lateinit var fixKeepAlive: MaterialButton
+    private lateinit var openOemSettings: MaterialButton
+    private lateinit var ackOemDone: MaterialButton
+    private lateinit var ackRecentsDone: MaterialButton
 
     private val logReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -61,6 +64,12 @@ class MainActivity : AppCompatActivity() {
         permissionWarning = findViewById(R.id.permissionWarning)
         permissionDetails = findViewById(R.id.permissionDetails)
         grantPermissions = findViewById(R.id.grantPermissions)
+        keepAliveWarning = findViewById(R.id.keepAliveWarning)
+        keepAliveDetails = findViewById(R.id.keepAliveDetails)
+        fixKeepAlive = findViewById(R.id.fixKeepAlive)
+        openOemSettings = findViewById(R.id.openOemSettings)
+        ackOemDone = findViewById(R.id.ackOemDone)
+        ackRecentsDone = findViewById(R.id.ackRecentsDone)
 
         handleIntentExtras(intent)
 
@@ -74,11 +83,31 @@ class MainActivity : AppCompatActivity() {
         toggleButton.setOnClickListener { toggleService() }
         grantPermissions.setOnClickListener {
             requestPermissions()
-            requestBatteryOptimizationExemption()
+            KeepAliveHelper.runWizard(this)
+        }
+        fixKeepAlive.setOnClickListener {
+            KeepAliveHelper.runWizard(this)
+            Toast.makeText(this, "Allow Unrestricted battery, then OEM auto-start", Toast.LENGTH_LONG).show()
+        }
+        openOemSettings.setOnClickListener {
+            KeepAliveHelper.openOemAutostartSettings(this)
+        }
+        ackOemDone.setOnClickListener {
+            KeepAliveHelper.setOemAcked(this)
+            updateUI()
+            Toast.makeText(this, "Auto-start marked done", Toast.LENGTH_SHORT).show()
+        }
+        ackRecentsDone.setOnClickListener {
+            KeepAliveHelper.setRecentsAcked(this)
+            updateUI()
+            Toast.makeText(this, "Recents lock marked done", Toast.LENGTH_SHORT).show()
         }
 
         requestPermissions()
-        requestBatteryOptimizationExemption()
+        if (!KeepAliveHelper.isSetupComplete(this)) {
+            // Auto-open battery / OEM screens when still incomplete
+            KeepAliveHelper.runWizard(this)
+        }
         updateUI()
     }
 
@@ -135,27 +164,20 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "Enter webhook URL and at least one SIM number", Toast.LENGTH_LONG).show()
                 return
             }
+            if (!KeepAliveHelper.isSetupComplete(this)) {
+                Toast.makeText(
+                    this,
+                    "Fix KEEP ALIVE checklist first — phone will kill the service otherwise",
+                    Toast.LENGTH_LONG
+                ).show()
+                KeepAliveHelper.runWizard(this)
+            }
             config.serviceEnabled = true
             ForwarderService.start(this)
             Toast.makeText(this, "Service started", Toast.LENGTH_SHORT).show()
         }
 
         updateUI()
-    }
-
-    private fun isBatteryOptimized(): Boolean {
-        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-        return !pm.isIgnoringBatteryOptimizations(packageName)
-    }
-
-    private fun requestBatteryOptimizationExemption() {
-        if (!isBatteryOptimized()) return
-        try {
-            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                data = Uri.parse("package:$packageName")
-            }
-            startActivity(intent)
-        } catch (_: Exception) {}
     }
 
     private fun getMissingPermissions(): List<String> {
@@ -185,21 +207,28 @@ class MainActivity : AppCompatActivity() {
     private fun updateUI() {
         val queued = MessageQueue.size(this)
         val missing = getMissingPermissions()
-        val batteryOptimized = isBatteryOptimized()
+        val batteryOptimized = KeepAliveHelper.isBatteryOptimized(this)
+        val keepAliveIncomplete = !KeepAliveHelper.isSetupComplete(this)
 
-        if (missing.isNotEmpty() || batteryOptimized) {
+        if (missing.isNotEmpty()) {
             permissionWarning.visibility = View.VISIBLE
-            val parts = mutableListOf<String>()
-            if (missing.isNotEmpty()) {
-                val names = missing.map { it.substringAfterLast(".") }
-                parts.add("Missing permissions: ${names.joinToString(", ")}")
-            }
-            if (batteryOptimized) {
-                parts.add("Battery optimization is ON — the app WILL be killed in the background. Tap Grant Permissions to fix.")
-            }
-            permissionDetails.text = parts.joinToString("\n\n")
+            val names = missing.map { it.substringAfterLast(".") }
+            permissionDetails.text = "Missing permissions: ${names.joinToString(", ")}"
         } else {
             permissionWarning.visibility = View.GONE
+        }
+
+        if (keepAliveIncomplete) {
+            keepAliveWarning.visibility = View.VISIBLE
+            keepAliveDetails.text = KeepAliveHelper.checklistText(this)
+            val oem = KeepAliveHelper.isAggressiveOem()
+            openOemSettings.visibility = if (oem) View.VISIBLE else View.GONE
+            ackOemDone.visibility =
+                if (oem && !KeepAliveHelper.isOemAcked(this)) View.VISIBLE else View.GONE
+            ackRecentsDone.visibility =
+                if (oem && !KeepAliveHelper.isRecentsAcked(this)) View.VISIBLE else View.GONE
+        } else {
+            keepAliveWarning.visibility = View.GONE
         }
 
         if (config.serviceEnabled) {
@@ -215,6 +244,7 @@ class MainActivity : AppCompatActivity() {
                 if (queued > 0) append("\nQueued: $queued messages pending")
                 if (missing.isNotEmpty()) append("\nWARNING: ${missing.size} permissions missing!")
                 if (batteryOptimized) append("\nWARNING: Battery optimization will kill this app!")
+                if (keepAliveIncomplete) append("\nWARNING: Keep-alive setup incomplete!")
             }
         } else {
             toggleButton.text = "Start Service"
