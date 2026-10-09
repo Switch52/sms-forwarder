@@ -46,7 +46,7 @@ class ForwarderService : Service() {
 
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
-        scheduleWatchdog()
+        scheduleWatchdog(this)
         startHeartbeatLoop()
 
         registerReceiver(
@@ -328,23 +328,6 @@ class ForwarderService : Service() {
         )
     }
 
-    private fun scheduleWatchdog() {
-        val intent = Intent(this, BootReceiver::class.java).apply {
-            action = "com.fastjourney.smsforwarder.WATCHDOG"
-        }
-        val pi = PendingIntent.getBroadcast(
-            this, 998, intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-        val am = getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        am.setRepeating(
-            AlarmManager.RTC_WAKEUP,
-            System.currentTimeMillis() + 60_000,
-            5 * 60_000,
-            pi
-        )
-    }
-
     companion object {
         const val CHANNEL_ID = "sms_forwarder_channel"
         const val NOTIFICATION_ID = 1
@@ -353,8 +336,33 @@ class ForwarderService : Service() {
         const val ACTION_LOG_UPDATED = "com.fastjourney.smsforwarder.LOG_UPDATED"
         const val ACTION_FLUSH_QUEUE = "com.fastjourney.smsforwarder.FLUSH_QUEUE"
         const val ACTION_HEARTBEAT = "com.fastjourney.smsforwarder.HEARTBEAT"
+        const val ACTION_WATCHDOG = "com.fastjourney.smsforwarder.WATCHDOG"
         private const val HEARTBEAT_INTERVAL_SECONDS = 60L
+        private const val WATCHDOG_INTERVAL_MS = 90_000L
+        private const val WATCHDOG_REQUEST_CODE = 998
         private const val TAG = "SmsForwarder"
+
+        /** Exact one-shot alarm that BootReceiver re-arms on every fire (setRepeating is unreliable). */
+        fun scheduleWatchdog(context: Context) {
+            val intent = Intent(context, BootReceiver::class.java).apply {
+                action = ACTION_WATCHDOG
+            }
+            val pi = PendingIntent.getBroadcast(
+                context, WATCHDOG_REQUEST_CODE, intent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+            val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val triggerAt = System.currentTimeMillis() + WATCHDOG_INTERVAL_MS
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !am.canScheduleExactAlarms()) {
+                    am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+                } else {
+                    am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+                }
+            } catch (_: SecurityException) {
+                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+            }
+        }
 
         fun enqueueWebhook(context: Context, webhookUrl: String, payload: String) {
             val intent = Intent(context, ForwarderService::class.java).apply {

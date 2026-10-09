@@ -11,6 +11,8 @@ class BootReceiver : BroadcastReceiver() {
         if (!config.serviceEnabled || !config.isConfigured()) return
 
         FileLog.log(context, ">> BootReceiver: ${intent.action}")
+        // Re-arm exact one-shot watchdog on every fire (including WATCHDOG itself).
+        ForwarderService.scheduleWatchdog(context)
         ForwarderService.start(context)
     }
 }
