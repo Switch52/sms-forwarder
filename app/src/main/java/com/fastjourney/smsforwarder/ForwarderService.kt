@@ -10,6 +10,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.ConnectivityManager
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Base64
@@ -111,6 +113,27 @@ class ForwarderService : Service() {
         heartbeatScheduler = null
     }
 
+    private fun readAppVersion(): String {
+        return try {
+            val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getPackageInfo(packageName, 0)
+            }
+            val name = info.versionName?.takeIf { it.isNotBlank() } ?: "?"
+            val code = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                info.longVersionCode
+            } else {
+                @Suppress("DEPRECATION")
+                info.versionCode.toLong()
+            }
+            "$name ($code)"
+        } catch (_: Exception) {
+            "unknown"
+        }
+    }
+
     private fun sendHeartbeat() {
         if (!heartbeatRunning.compareAndSet(false, true)) return
         try {
@@ -123,6 +146,7 @@ class ForwarderService : Service() {
                 put("deviceName", config.deviceName)
                 put("sim1Number", config.sim1Number.ifBlank { JSONObject.NULL })
                 put("sim2Number", config.sim2Number.ifBlank { JSONObject.NULL })
+                put("appVersion", readAppVersion())
             }.toString()
 
             try {
