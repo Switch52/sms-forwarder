@@ -38,8 +38,11 @@ class Config(context: Context) {
         get() = prefs.getString("auth_username", "") ?: ""
         set(value) = prefs.edit().putString("auth_username", value).apply()
 
+    /** accounts-api x-api-key (Auth Password field). */
     var authPassword: String
-        get() = prefs.getString("auth_password", "") ?: ""
+        get() = prefs.getString("auth_password", null)
+            ?.takeIf { it.isNotBlank() }
+            ?: DEFAULT_API_KEY
         set(value) = prefs.edit().putString("auth_password", value).apply()
 
     var serviceEnabled: Boolean
@@ -82,5 +85,6 @@ class Config(context: Context) {
             "https://ejoin-sms-webhook-staging.fastjourney.shop/api/sms-webhook"
         const val DEFAULT_HEARTBEAT_URL =
             "https://visaflow-backend.fastjourney.shop/sms-devices/heartbeat"
+        const val DEFAULT_API_KEY = "test-api-key-12345"
     }
 }
