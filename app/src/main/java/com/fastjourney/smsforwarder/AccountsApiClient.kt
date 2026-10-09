@@ -57,4 +57,43 @@ object AccountsApiClient {
             conn.disconnect()
         }
     }
+
+    fun postError(
+        heartbeatUrl: String,
+        apiKey: String,
+        deviceId: String,
+        code: String,
+        message: String,
+        simSlot: Int?,
+        configuredNumber: String?,
+        detectedNumber: String?,
+    ) {
+        val base = devicesBaseUrl(heartbeatUrl) ?: return
+        if (apiKey.isBlank()) return
+
+        val payload = JSONObject().apply {
+            put("deviceId", deviceId)
+            put("code", code)
+            put("message", message)
+            put("simSlot", simSlot ?: JSONObject.NULL)
+            put("configuredNumber", configuredNumber?.takeIf { it.isNotBlank() } ?: JSONObject.NULL)
+            put("detectedNumber", detectedNumber?.takeIf { it.isNotBlank() } ?: JSONObject.NULL)
+            put("recordedAt", System.currentTimeMillis())
+        }.toString()
+
+        val url = URL("$base/errors")
+        val conn = url.openConnection() as HttpURLConnection
+        try {
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.setRequestProperty("x-api-key", apiKey)
+            conn.connectTimeout = 10_000
+            conn.readTimeout = 10_000
+            conn.doOutput = true
+            OutputStreamWriter(conn.outputStream).use { it.write(payload) }
+            conn.responseCode
+        } finally {
+            conn.disconnect()
+        }
+    }
 }
