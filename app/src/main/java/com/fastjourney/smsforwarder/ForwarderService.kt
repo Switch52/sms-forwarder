@@ -10,7 +10,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.ConnectivityManager
-import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Base64
@@ -121,13 +120,7 @@ class ForwarderService : Service() {
 
             val payload = JSONObject().apply {
                 put("deviceId", config.deviceId)
-                put(
-                    "deviceName",
-                    listOf(Build.MANUFACTURER, Build.MODEL)
-                        .filter { it.isNotBlank() }
-                        .joinToString(" ")
-                        .ifBlank { "Android" }
-                )
+                put("deviceName", config.deviceName)
                 put("sim1Number", config.sim1Number.ifBlank { JSONObject.NULL })
                 put("sim2Number", config.sim2Number.ifBlank { JSONObject.NULL })
             }.toString()
@@ -167,6 +160,7 @@ class ForwarderService : Service() {
 
                 if (code in 200..299) {
                     FileLog.log(this, "-> SENT SIM$simNum from $sender (HTTP $code)")
+                    reportForwardedSms(config, payload, code)
                     flushQueue()
                     return
                 }
@@ -197,6 +191,8 @@ class ForwarderService : Service() {
                 val code = doPost(config.webhookUrl, payload, config)
                 if (code !in 200..299) {
                     MessageQueue.enqueue(this, payload)
+                } else {
+                    reportForwardedSms(config, payload, code)
                 }
             } catch (_: Exception) {
                 MessageQueue.enqueue(this, payload)
@@ -206,6 +202,29 @@ class ForwarderService : Service() {
         val remaining = MessageQueue.size(this)
         if (remaining > 0) {
             FileLog.log(this, "Queue flush incomplete, $remaining still pending")
+        }
+    }
+
+    private fun reportForwardedSms(config: Config, payload: String, httpStatus: Int) {
+        try {
+            val root = JSONObject(payload)
+            val data = root.optJSONObject("payload") ?: root
+            val sender = data.optString("sender", "?")
+            val body = data.optString("message", data.optString("body", ""))
+            val simSlot = data.optInt("simNumber", 1).coerceIn(1, 2)
+            val simNumber = config.getNumberForSim(simSlot - 1).ifBlank { null }
+            AccountsApiClient.postMessageLog(
+                heartbeatUrl = config.heartbeatUrl,
+                apiKey = config.authPassword,
+                deviceId = config.deviceId,
+                simSlot = simSlot,
+                simNumber = simNumber,
+                sender = sender,
+                body = body,
+                httpStatus = httpStatus,
+            )
+        } catch (e: Exception) {
+            FileLog.log(this, "!! SMS log error: ${e.javaClass.simpleName}: ${e.message}")
         }
     }
 

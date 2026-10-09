@@ -206,6 +206,7 @@ class MainActivity : AppCompatActivity() {
             toggleButton.text = "Stop Service"
             statusText.text = buildString {
                 append("Service running")
+                append("\nDevice: ${config.deviceName}")
                 append("\nDevice ID: ${config.deviceId}")
                 append("\nWebhook: ${config.webhookUrl}")
                 append("\nHeartbeat: ${config.heartbeatUrl.ifBlank { "(not set)" }}")

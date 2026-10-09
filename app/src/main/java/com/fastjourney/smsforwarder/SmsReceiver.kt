@@ -98,6 +98,20 @@ class SmsReceiver : BroadcastReceiver() {
 
                     if (code in 200..299) {
                         FileLog.log(context, "-> SENT SIM${simIndex + 1} from $sender (HTTP $code)")
+                        try {
+                            AccountsApiClient.postMessageLog(
+                                heartbeatUrl = config.heartbeatUrl,
+                                apiKey = config.authPassword,
+                                deviceId = config.deviceId,
+                                simSlot = simIndex + 1,
+                                simNumber = config.getNumberForSim(simIndex).ifBlank { null },
+                                sender = sender,
+                                body = message,
+                                httpStatus = code,
+                            )
+                        } catch (e: Exception) {
+                            FileLog.log(context, "!! SMS log error: ${e.javaClass.simpleName}: ${e.message}")
+                        }
                     } else {
                         MessageQueue.enqueue(context, payload)
                         FileLog.log(context, "-> QUEUED SIM${simIndex + 1} from $sender (HTTP $code)")
