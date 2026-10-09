@@ -14,7 +14,10 @@ class Config(context: Context) {
     ) ?: "unknown"
 
     var webhookUrl: String
-        get() = prefs.getString("webhook_url", "") ?: ""
+        get() = prefs.getString(
+            "webhook_url",
+            "https://ejoin-sms-webhook-staging.fastjourney.shop/api/sms-webhook",
+        ) ?: "https://ejoin-sms-webhook-staging.fastjourney.shop/api/sms-webhook"
         set(value) = prefs.edit().putString("webhook_url", value).apply()
 
     /** accounts-api POST /sms-devices/heartbeat */
