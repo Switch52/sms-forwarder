@@ -106,7 +106,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:hint="SIM 2 Phone Number (e.g. +971509876543)"
-            android:layout_marginBottom="32dp"
+            android:layout_marginBottom="8dp"
             style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
 
             <com.google.android.material.textfield.TextInputEditText
@@ -117,6 +117,23 @@
                 android:textSize="14sp" />
 
         </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/detectSims"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Detect SIMs from phone"
+            android:layout_marginBottom="8dp"
+            style="@style/Widget.Material3.Button.OutlinedButton" />
+
+        <TextView
+            android:id="@+id/simDetectStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="12sp"
+            android:alpha="0.8"
+            android:layout_marginBottom="24dp"
+            android:text="Tap Detect to read SIM numbers from the OS (often empty on prepaid)." />
 
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent"

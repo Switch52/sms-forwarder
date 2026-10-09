@@ -35,6 +35,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var permissionWarning: MaterialCardView
     private lateinit var permissionDetails: TextView
     private lateinit var grantPermissions: MaterialButton
+    private lateinit var detectSimsButton: MaterialButton
+    private lateinit var simDetectStatus: TextView
 
     private val logReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -59,6 +61,8 @@ class MainActivity : AppCompatActivity() {
         permissionWarning = findViewById(R.id.permissionWarning)
         permissionDetails = findViewById(R.id.permissionDetails)
         grantPermissions = findViewById(R.id.grantPermissions)
+        detectSimsButton = findViewById(R.id.detectSims)
+        simDetectStatus = findViewById(R.id.simDetectStatus)
 
         handleIntentExtras(intent)
 
@@ -69,6 +73,7 @@ class MainActivity : AppCompatActivity() {
         authPasswordInput.setText(config.authPassword)
 
         toggleButton.setOnClickListener { toggleService() }
+        detectSimsButton.setOnClickListener { detectAndFillSims() }
         grantPermissions.setOnClickListener {
             requestPermissions()
             requestBatteryOptimizationExemption()
@@ -77,6 +82,7 @@ class MainActivity : AppCompatActivity() {
         requestPermissions()
         requestBatteryOptimizationExemption()
         updateUI()
+        refreshSimDetectStatus()
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -130,12 +136,106 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "Enter webhook URL and at least one SIM number", Toast.LENGTH_LONG).show()
                 return
             }
+            val mismatch = softValidateAgainstOs()
+            if (mismatch != null) {
+                Toast.makeText(this, mismatch, Toast.LENGTH_LONG).show()
+            }
             config.serviceEnabled = true
             ForwarderService.start(this)
             Toast.makeText(this, "Service started", Toast.LENGTH_SHORT).show()
         }
 
         updateUI()
+        refreshSimDetectStatus()
+    }
+
+    /** Soft check only — never blocks start when OS MSISDN is missing. */
+    private fun softValidateAgainstOs(): String? {
+        val detected = SimInfo.detect(this)
+        if (detected.isEmpty()) return null
+
+        val issues = mutableListOf<String>()
+        for (slot in 0..1) {
+            val typed = if (slot == 0) config.sim1Number else config.sim2Number
+            val os = SimInfo.numberForSlot(detected, slot)
+            if (typed.isBlank() || os.isBlank()) continue
+            if (!SimInfo.numbersMatch(typed, os)) {
+                issues.add("SIM ${slot + 1}: typed $typed vs OS $os")
+            }
+        }
+        return if (issues.isEmpty()) null
+        else "Warning: number mismatch — ${issues.joinToString("; ")}"
+    }
+
+    private fun detectAndFillSims() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            Toast.makeText(this, "Grant Phone permission first", Toast.LENGTH_LONG).show()
+            requestPermissions()
+            return
+        }
+
+        val detected = SimInfo.detect(this)
+        if (detected.isEmpty()) {
+            simDetectStatus.text = "No active SIMs found (or permission denied)."
+            Toast.makeText(this, "No SIMs detected", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        var filled = 0
+        for (sim in detected) {
+            if (sim.number.isBlank()) continue
+            when (sim.slotIndex) {
+                0 -> {
+                    sim1Input.setText(sim.number)
+                    filled++
+                }
+                1 -> {
+                    sim2Input.setText(sim.number)
+                    filled++
+                }
+            }
+        }
+        saveConfig()
+        refreshSimDetectStatus()
+
+        if (filled == 0) {
+            Toast.makeText(
+                this,
+                "SIMs found but OS returned no phone numbers (common on prepaid). Enter them manually.",
+                Toast.LENGTH_LONG
+            ).show()
+        } else {
+            Toast.makeText(this, "Filled $filled number(s) from the OS", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun refreshSimDetectStatus() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            simDetectStatus.text = "Need Phone permission to detect SIM numbers."
+            return
+        }
+
+        val detected = SimInfo.detect(this)
+        if (detected.isEmpty()) {
+            simDetectStatus.text = "No active SIMs detected."
+            return
+        }
+
+        simDetectStatus.text = detected.joinToString("\n") { sim ->
+            val num = sim.number.ifBlank { "(not provided by carrier/OS)" }
+            val carrier = sim.carrierName.ifBlank { sim.displayName }.ifBlank { "?" }
+            val typed = if (sim.slotIndex == 0) config.sim1Number else config.sim2Number
+            val match = when {
+                sim.number.isBlank() || typed.isBlank() -> ""
+                SimInfo.numbersMatch(typed, sim.number) -> " ✓ matches typed"
+                else -> " ✗ differs from typed"
+            }
+            "Slot ${sim.slotIndex + 1} ($carrier): $num$match"
+        }
     }
 
     private fun isBatteryOptimized(): Boolean {
@@ -161,11 +261,11 @@ class MainActivity : AppCompatActivity() {
             Manifest.permission.READ_SMS,
             Manifest.permission.SEND_SMS,
             Manifest.permission.READ_PHONE_STATE,
+            Manifest.permission.READ_PHONE_NUMBERS,
         )
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             required.add(Manifest.permission.POST_NOTIFICATIONS)
-            required.add(Manifest.permission.READ_PHONE_NUMBERS)
         }
 
         for (p in required) {
@@ -213,6 +313,8 @@ class MainActivity : AppCompatActivity() {
             toggleButton.text = "Start Service"
             statusText.text = "Service stopped"
         }
+
+        refreshSimDetectStatus()
     }
 
     private fun refreshLog() {
