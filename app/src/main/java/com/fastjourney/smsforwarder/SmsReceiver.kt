@@ -335,19 +335,61 @@ class SmsReceiver : BroadcastReceiver() {
         }
 
         val androidNumber = detect.androidNumber
-        if (!androidNumber.isNullOrBlank() && !phonesMatch(configuredNumber, androidNumber)) {
+        if (!androidNumber.isNullOrBlank()) {
+            if (!phonesMatch(configuredNumber, androidNumber)) {
+                FileLog.log(
+                    context,
+                    "!! SIM_NUMBER_MISMATCH slot=${detect.slotIndex} configured=$configuredNumber android=$androidNumber",
+                )
+                postDeviceError(
+                    context = context,
+                    config = config,
+                    code = "SIM_NUMBER_MISMATCH",
+                    message = "Configured SIM $simSlot number ($configuredNumber) does not match Android number for that slot ($androidNumber)",
+                    simSlot = simSlot,
+                    configuredNumber = configuredNumber,
+                    detectedNumber = androidNumber,
+                )
+            }
+            return
+        }
+
+        // Etisalat / e& leave SubscriptionInfo.number empty — learn carrier → number.
+        val carrierKey = detect.displayName?.trim()?.takeIf { it.isNotBlank() }
+        if (carrierKey == null) {
+            FileLog.log(context, "!! SIM_NUMBER_UNAVAILABLE slot=${detect.slotIndex}")
+            postDeviceError(
+                context = context,
+                config = config,
+                code = "SIM_NUMBER_UNAVAILABLE",
+                message = "Android did not expose a phone number for SIM $simSlot; cannot verify configured number ($configuredNumber)",
+                simSlot = simSlot,
+                configuredNumber = configuredNumber,
+                detectedNumber = null,
+            )
+            return
+        }
+
+        val learned = config.getLearnedNumberForCarrier(carrierKey)
+        if (learned.isNullOrBlank()) {
+            config.setLearnedNumberForCarrier(carrierKey, configuredNumber)
+            FileLog.log(context, ">> Learned carrier \"$carrierKey\" → $configuredNumber")
+            return
+        }
+
+        if (!phonesMatch(configuredNumber, learned)) {
             FileLog.log(
                 context,
-                "!! SIM_NUMBER_MISMATCH slot=${detect.slotIndex} configured=$configuredNumber android=$androidNumber",
+                "!! SIM_NUMBER_MISMATCH carrier=$carrierKey configured=$configuredNumber learned=$learned",
             )
             postDeviceError(
                 context = context,
                 config = config,
                 code = "SIM_NUMBER_MISMATCH",
-                message = "Configured SIM $simSlot number ($configuredNumber) does not match Android number for that slot ($androidNumber)",
+                message = "Configured SIM $simSlot number ($configuredNumber) does not match the number previously learned for carrier \"$carrierKey\" ($learned). Android did not expose the live MSISDN.",
                 simSlot = simSlot,
                 configuredNumber = configuredNumber,
-                detectedNumber = androidNumber,
+                detectedNumber = learned,
             )
         }
     }
