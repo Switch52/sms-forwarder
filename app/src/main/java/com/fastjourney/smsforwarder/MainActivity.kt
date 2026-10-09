@@ -36,7 +36,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var permissionDetails: TextView
     private lateinit var grantPermissions: MaterialButton
     private lateinit var detectSimsButton: MaterialButton
+    private lateinit var fetchUssdButton: MaterialButton
     private lateinit var simDetectStatus: TextView
+    private var ussdInProgress = false
 
     private val logReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -62,6 +64,7 @@ class MainActivity : AppCompatActivity() {
         permissionDetails = findViewById(R.id.permissionDetails)
         grantPermissions = findViewById(R.id.grantPermissions)
         detectSimsButton = findViewById(R.id.detectSims)
+        fetchUssdButton = findViewById(R.id.fetchUssd)
         simDetectStatus = findViewById(R.id.simDetectStatus)
 
         handleIntentExtras(intent)
@@ -74,6 +77,7 @@ class MainActivity : AppCompatActivity() {
 
         toggleButton.setOnClickListener { toggleService() }
         detectSimsButton.setOnClickListener { detectAndFillSims() }
+        fetchUssdButton.setOnClickListener { fetchNumbersViaUssd() }
         grantPermissions.setOnClickListener {
             requestPermissions()
             requestBatteryOptimizationExemption()
@@ -203,12 +207,86 @@ class MainActivity : AppCompatActivity() {
         if (filled == 0) {
             Toast.makeText(
                 this,
-                "SIMs found but OS returned no phone numbers (common on prepaid). Enter them manually.",
+                "SIMs found but OS returned no phone numbers (common on prepaid). Try Fetch via USSD.",
                 Toast.LENGTH_LONG
             ).show()
         } else {
             Toast.makeText(this, "Filled $filled number(s) from the OS", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    private fun fetchNumbersViaUssd() {
+        if (ussdInProgress) {
+            Toast.makeText(this, "USSD already running…", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE)
+            != PackageManager.PERMISSION_GRANTED
+            || ContextCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            Toast.makeText(this, "Grant Phone + Call permissions first", Toast.LENGTH_LONG).show()
+            requestPermissions()
+            return
+        }
+
+        ussdInProgress = true
+        fetchUssdButton.isEnabled = false
+        simDetectStatus.text = "Starting USSD on each SIM…"
+        FileLog.log(this, ">> USSD number fetch started")
+
+        UssdNumberFetcher.fetchForActiveSims(
+            context = this,
+            onProgress = { msg ->
+                runOnUiThread {
+                    simDetectStatus.text = msg
+                    FileLog.log(this, ">> USSD: $msg")
+                }
+            },
+            onFinished = { results ->
+                runOnUiThread {
+                    ussdInProgress = false
+                    fetchUssdButton.isEnabled = true
+                    var filled = 0
+                    val lines = mutableListOf<String>()
+                    for (r in results) {
+                        FileLog.log(
+                            this,
+                            ">> USSD slot=${r.slotIndex + 1} code=${r.ussdCode} parsed=${r.parsedNumber} err=${r.error} raw=${r.rawResponse.take(80)}"
+                        )
+                        if (r.slotIndex < 0) {
+                            lines.add(r.error ?: "error")
+                            continue
+                        }
+                        if (r.parsedNumber != null) {
+                            when (r.slotIndex) {
+                                0 -> {
+                                    sim1Input.setText(r.parsedNumber)
+                                    filled++
+                                }
+                                1 -> {
+                                    sim2Input.setText(r.parsedNumber)
+                                    filled++
+                                }
+                            }
+                            lines.add("Slot ${r.slotIndex + 1}: ${r.parsedNumber} (via ${r.ussdCode})")
+                        } else {
+                            val detail = r.error ?: r.rawResponse.ifBlank { "no number" }
+                            lines.add("Slot ${r.slotIndex + 1}: failed — $detail")
+                        }
+                    }
+                    saveConfig()
+                    simDetectStatus.text = lines.joinToString("\n").ifBlank { "No USSD results." }
+                    Toast.makeText(
+                        this,
+                        if (filled > 0) "Filled $filled number(s) via USSD"
+                        else "USSD did not return numbers — enter manually",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    refreshLog()
+                }
+            },
+        )
     }
 
     private fun refreshSimDetectStatus() {
@@ -262,6 +340,7 @@ class MainActivity : AppCompatActivity() {
             Manifest.permission.SEND_SMS,
             Manifest.permission.READ_PHONE_STATE,
             Manifest.permission.READ_PHONE_NUMBERS,
+            Manifest.permission.CALL_PHONE,
         )
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

@@ -126,6 +126,14 @@
             android:layout_marginBottom="8dp"
             style="@style/Widget.Material3.Button.OutlinedButton" />
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/fetchUssd"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Fetch numbers via USSD"
+            android:layout_marginBottom="8dp"
+            style="@style/Widget.Material3.Button.OutlinedButton" />
+
         <TextView
             android:id="@+id/simDetectStatus"
             android:layout_width="match_parent"
@@ -133,7 +141,7 @@
             android:textSize="12sp"
             android:alpha="0.8"
             android:layout_marginBottom="24dp"
-            android:text="Tap Detect to read SIM numbers from the OS (often empty on prepaid)." />
+            android:text="Detect = OS fields. USSD = ask carrier (e.g. *947# on e&amp; Egypt). Often still fails on dual-SIM." />
 
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent"

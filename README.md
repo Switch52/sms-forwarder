@@ -23,9 +23,9 @@ You tell the app which phone number belongs to each SIM slot, and it includes th
 1. Open the app
 2. Enter your **Webhook URL** -- the server address where SMS messages should be sent
 3. Enter the phone number for **SIM 1** and/or **SIM 2** (use the full number with country code, e.g. `+971501234567`)
-4. Optional: tap **Detect SIMs from phone** to try reading numbers from the OS and auto-fill the fields (see below)
+4. Optional: tap **Detect SIMs from phone** (OS fields) or **Fetch numbers via USSD** (carrier codes) to auto-fill
 5. Tap **Start Service**
-6. Grant all permissions when prompted (SMS, Phone, Notifications)
+6. Grant all permissions when prompted (SMS, Phone, Call phone, Notifications)
 7. **Disable battery optimization** -- see the section below
 
 That's it. The app will now forward every incoming SMS to your webhook.
@@ -37,6 +37,14 @@ Tap **Detect SIMs from phone** to ask Android for each slot’s number via `Subs
 - If the OS returns a number, the app **auto-fills** that SIM field and shows whether it matches what you typed.
 - On start, if both typed and OS numbers exist and they differ, you get a **warning toast** (service still starts — this never hard-blocks).
 - **Often empty or wrong** on prepaid / dual-SIM / many EG carriers. Manual entry is still the source of truth when Detect returns blank.
+
+## Fetch numbers via USSD (v1.3+)
+
+When Detect returns blank, tap **Fetch numbers via USSD**. The app dials carrier “show my number” codes per SIM (e.g. e& Egypt `*947#` / `*878#`, plus `*#100#` fallbacks), parses the reply, and fills SIM 1 / SIM 2.
+
+- Needs **Phone** + **Call phone** permissions.
+- Still best-effort: some OEMs/dual-SIM setups fail or return menus without a clear MSISDN.
+- Reading the number straight off the SIM chip (EF_MSISDN) is **not** possible for a normal app (needs system/root).
 
 ## IMPORTANT: Battery / Auto-Start Settings
 
@@ -64,6 +72,7 @@ Also lock the app in recent apps: open the app, tap the recents button (square),
 
 - **Dual SIM support** -- assign a phone number to each SIM slot so the server knows which number received the message
 - **Detect SIMs** -- best-effort read of slot numbers from the OS; auto-fill + soft mismatch warning (not available on all carriers)
+- **Fetch via USSD** -- ask the carrier for each slot’s number when the OS leaves it blank (e.g. `*947#` on e&)
 - **Runs in the background** -- keeps forwarding even when the app is closed or the phone restarts
 - **Survives app kills** -- SMS forwarding happens directly in the broadcast receiver, independent of the background service
 - **Offline queue** -- if the phone loses internet, messages are saved and sent when the connection comes back (up to 100 messages)
