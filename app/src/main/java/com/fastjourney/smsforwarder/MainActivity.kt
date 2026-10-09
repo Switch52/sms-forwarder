@@ -236,6 +236,7 @@ class MainActivity : AppCompatActivity() {
         val sim1 = intent.getStringExtra("sim1")
         val sim2 = intent.getStringExtra("sim2")
         val apiKey = intent.getStringExtra("api_key")
+        val deviceIdOverride = intent.getStringExtra("device_id")
         val autoStart = intent.getBooleanExtra("start", false)
 
         if (url != null) config.webhookUrl = url
@@ -243,6 +244,10 @@ class MainActivity : AppCompatActivity() {
         if (sim1 != null) config.sim1Number = sim1
         if (sim2 != null) config.sim2Number = sim2
         if (apiKey != null) config.authPassword = apiKey
+        if (!deviceIdOverride.isNullOrBlank()) {
+            DeviceIdentity.setDeviceIdOverride(this, deviceIdOverride)
+            config = Config(this)
+        }
 
         if (autoStart && config.isConfigured() && !config.serviceEnabled) {
             config.serviceEnabled = true
