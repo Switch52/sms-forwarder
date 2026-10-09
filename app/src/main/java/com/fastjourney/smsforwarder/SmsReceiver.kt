@@ -64,9 +64,11 @@ class SmsReceiver : BroadcastReceiver() {
             val format = bundle.getString("format", "3gpp")
             FileLog.log(context, ">> PDUs: ${pdus.size}, format=$format")
 
-            val simIndex = detectSimSlot(context, intent)
+            val simDetect = detectSimSlot(context, intent)
+            val simIndex = simDetect.slotIndex
             val recipient = config.getNumberForSim(simIndex)
             FileLog.log(context, ">> SIM slot: $simIndex, recipient: $recipient")
+            reportSimConfigIssues(context, config, simDetect, recipient)
 
             val messageBody = StringBuilder()
             var sender = ""
@@ -155,8 +157,16 @@ class SmsReceiver : BroadcastReceiver() {
         return code
     }
 
-    private fun detectSimSlot(context: Context, intent: Intent): Int {
-        val extras = intent.extras ?: return 0
+    private data class SimDetectResult(
+        val slotIndex: Int,
+        val androidNumber: String?,
+        val displayName: String?,
+        val detectionFailed: Boolean,
+    )
+
+    private fun detectSimSlot(context: Context, intent: Intent): SimDetectResult {
+        val extras = intent.extras
+            ?: return SimDetectResult(0, null, null, detectionFailed = true)
 
         val intDump = StringBuilder()
         for (key in extras.keySet()) {
@@ -189,11 +199,22 @@ class SmsReceiver : BroadcastReceiver() {
                     as? SubscriptionManager
                 val subInfo = subManager?.getActiveSubscriptionInfo(subId)
                 if (subInfo != null) {
-                    FileLog.log(context, ">> SIM detect: subInfo.slotIndex=${subInfo.simSlotIndex}, displayName=${subInfo.displayName}")
-                    return subInfo.simSlotIndex
+                    val androidNumber = subInfo.number?.trim()?.takeIf { it.isNotBlank() && it != "null" }
+                    FileLog.log(
+                        context,
+                        ">> SIM detect: subInfo.slotIndex=${subInfo.simSlotIndex}, displayName=${subInfo.displayName}, number=${androidNumber ?: "(empty)"}",
+                    )
+                    return SimDetectResult(
+                        slotIndex = subInfo.simSlotIndex.coerceIn(0, 1),
+                        androidNumber = androidNumber,
+                        displayName = subInfo.displayName?.toString(),
+                        detectionFailed = false,
+                    )
                 } else {
                     FileLog.log(context, ">> SIM detect: no subInfo for subId=$subId, trying as slot index")
-                    if (subId <= 1) return subId
+                    if (subId <= 1) {
+                        return SimDetectResult(subId, null, null, detectionFailed = false)
+                    }
                 }
             } catch (e: SecurityException) {
                 FileLog.log(context, "!! SIM detect: SecurityException — READ_PHONE_STATE missing")
@@ -224,7 +245,8 @@ class SmsReceiver : BroadcastReceiver() {
                 val slot = extras.getInt(key, -1)
                 if (slot >= 0 && slot <= 1) {
                     FileLog.log(context, ">> SIM detect: slot=$slot from key=$key")
-                    return slot
+                    val androidNumber = lookupSlotNumber(context, slot)
+                    return SimDetectResult(slot, androidNumber, null, detectionFailed = false)
                 }
             }
         }
@@ -237,8 +259,14 @@ class SmsReceiver : BroadcastReceiver() {
                 if (subs != null) {
                     for ((idx, sub) in subs.withIndex()) {
                         if (sub.subscriptionId == subId) {
+                            val androidNumber = sub.number?.trim()?.takeIf { it.isNotBlank() && it != "null" }
                             FileLog.log(context, ">> SIM detect: matched subId=$subId to list index=$idx, slotIndex=${sub.simSlotIndex}")
-                            return sub.simSlotIndex
+                            return SimDetectResult(
+                                slotIndex = sub.simSlotIndex.coerceIn(0, 1),
+                                androidNumber = androidNumber,
+                                displayName = sub.displayName?.toString(),
+                                detectionFailed = false,
+                            )
                         }
                     }
                     FileLog.log(context, ">> SIM detect: ${subs.size} active subs, none matched subId=$subId")
@@ -247,7 +275,106 @@ class SmsReceiver : BroadcastReceiver() {
         }
 
         FileLog.log(context, ">> SIM detect: FAILED — defaulting to slot 0")
-        return 0
+        return SimDetectResult(0, lookupSlotNumber(context, 0), null, detectionFailed = true)
+    }
+
+    private fun lookupSlotNumber(context: Context, slotIndex: Int): String? {
+        return try {
+            val subManager = context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE)
+                as? SubscriptionManager
+            val subs = subManager?.activeSubscriptionInfoList ?: return null
+            val match = subs.firstOrNull { it.simSlotIndex == slotIndex } ?: return null
+            match.number?.trim()?.takeIf { it.isNotBlank() && it != "null" }
+        } catch (_: SecurityException) {
+            null
+        }
+    }
+
+    private fun normalizePhone(value: String): String =
+        value.filter { it.isDigit() }.trimStart('0')
+
+    private fun phonesMatch(a: String, b: String): Boolean {
+        val na = normalizePhone(a)
+        val nb = normalizePhone(b)
+        if (na.isBlank() || nb.isBlank()) return false
+        return na == nb || na.endsWith(nb) || nb.endsWith(na)
+    }
+
+    private fun reportSimConfigIssues(
+        context: Context,
+        config: Config,
+        detect: SimDetectResult,
+        configuredNumber: String,
+    ) {
+        val simSlot = detect.slotIndex + 1
+        if (detect.detectionFailed) {
+            FileLog.log(context, "!! SIM_DETECT_FAILED — reporting to accounts-api")
+            postDeviceError(
+                context = context,
+                config = config,
+                code = "SIM_DETECT_FAILED",
+                message = "Could not detect which SIM slot received the SMS; defaulted to SIM $simSlot",
+                simSlot = simSlot,
+                configuredNumber = configuredNumber.ifBlank { null },
+                detectedNumber = detect.androidNumber,
+            )
+        }
+
+        if (configuredNumber.isBlank()) {
+            FileLog.log(context, "!! SIM_CONFIG_MISSING for slot ${detect.slotIndex}")
+            postDeviceError(
+                context = context,
+                config = config,
+                code = "SIM_CONFIG_MISSING",
+                message = "SMS arrived on SIM slot ${detect.slotIndex} but no number is configured for SIM $simSlot",
+                simSlot = simSlot,
+                configuredNumber = null,
+                detectedNumber = detect.androidNumber,
+            )
+            return
+        }
+
+        val androidNumber = detect.androidNumber
+        if (!androidNumber.isNullOrBlank() && !phonesMatch(configuredNumber, androidNumber)) {
+            FileLog.log(
+                context,
+                "!! SIM_NUMBER_MISMATCH slot=${detect.slotIndex} configured=$configuredNumber android=$androidNumber",
+            )
+            postDeviceError(
+                context = context,
+                config = config,
+                code = "SIM_NUMBER_MISMATCH",
+                message = "Configured SIM $simSlot number ($configuredNumber) does not match Android number for that slot ($androidNumber)",
+                simSlot = simSlot,
+                configuredNumber = configuredNumber,
+                detectedNumber = androidNumber,
+            )
+        }
+    }
+
+    private fun postDeviceError(
+        context: Context,
+        config: Config,
+        code: String,
+        message: String,
+        simSlot: Int?,
+        configuredNumber: String?,
+        detectedNumber: String?,
+    ) {
+        try {
+            AccountsApiClient.postError(
+                heartbeatUrl = config.heartbeatUrl,
+                apiKey = config.authPassword,
+                deviceId = config.deviceId,
+                code = code,
+                message = message,
+                simSlot = simSlot,
+                configuredNumber = configuredNumber,
+                detectedNumber = detectedNumber,
+            )
+        } catch (e: Exception) {
+            FileLog.log(context, "!! Error report failed: ${e.javaClass.simpleName}: ${e.message}")
+        }
     }
 
     private fun buildPayload(
