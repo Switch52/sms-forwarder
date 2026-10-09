@@ -14,15 +14,16 @@ class Config(context: Context) {
     val deviceName: String = DeviceIdentity.deviceName()
 
     var webhookUrl: String
-        get() = prefs.getString(
-            "webhook_url",
-            "https://ejoin-sms-webhook-staging.fastjourney.shop/api/sms-webhook",
-        ) ?: "https://ejoin-sms-webhook-staging.fastjourney.shop/api/sms-webhook"
+        get() = prefs.getString("webhook_url", null)
+            ?.takeIf { it.isNotBlank() }
+            ?: DEFAULT_WEBHOOK_URL
         set(value) = prefs.edit().putString("webhook_url", value).apply()
 
     /** accounts-api POST /sms-devices/heartbeat */
     var heartbeatUrl: String
-        get() = prefs.getString("heartbeat_url", "") ?: ""
+        get() = prefs.getString("heartbeat_url", null)
+            ?.takeIf { it.isNotBlank() }
+            ?: DEFAULT_HEARTBEAT_URL
         set(value) = prefs.edit().putString("heartbeat_url", value).apply()
 
     var sim1Number: String
@@ -57,5 +58,12 @@ class Config(context: Context) {
 
     fun isConfigured(): Boolean {
         return webhookUrl.isNotBlank() && (sim1Number.isNotBlank() || sim2Number.isNotBlank())
+    }
+
+    companion object {
+        const val DEFAULT_WEBHOOK_URL =
+            "https://ejoin-sms-webhook-staging.fastjourney.shop/api/sms-webhook"
+        const val DEFAULT_HEARTBEAT_URL =
+            "https://visaflow-backend.fastjourney.shop/sms-devices/heartbeat"
     }
 }
