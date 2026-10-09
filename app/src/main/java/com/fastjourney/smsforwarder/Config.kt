@@ -60,6 +60,23 @@ class Config(context: Context) {
         return webhookUrl.isNotBlank() && (sim1Number.isNotBlank() || sim2Number.isNotBlank())
     }
 
+    /**
+     * Learned MSISDN for a carrier label (e.g. "etisalat") from the first SMS we saw on that SIM.
+     * Used when Android leaves SubscriptionInfo.number empty (common on Etisalat / e&).
+     */
+    fun getLearnedNumberForCarrier(carrierKey: String): String? {
+        if (carrierKey.isBlank()) return null
+        return prefs.getString(carrierPrefKey(carrierKey), null)?.takeIf { it.isNotBlank() }
+    }
+
+    fun setLearnedNumberForCarrier(carrierKey: String, number: String) {
+        if (carrierKey.isBlank() || number.isBlank()) return
+        prefs.edit().putString(carrierPrefKey(carrierKey), number.trim()).apply()
+    }
+
+    private fun carrierPrefKey(carrierKey: String): String =
+        "learned_carrier_${carrierKey.lowercase().replace(Regex("[^a-z0-9]+"), "_")}"
+
     companion object {
         const val DEFAULT_WEBHOOK_URL =
             "https://ejoin-sms-webhook-staging.fastjourney.shop/api/sms-webhook"
