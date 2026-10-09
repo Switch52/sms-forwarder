@@ -25,6 +25,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var config: Config
     private lateinit var webhookUrlInput: TextInputEditText
+    private lateinit var heartbeatUrlInput: TextInputEditText
     private lateinit var sim1Input: TextInputEditText
     private lateinit var sim2Input: TextInputEditText
     private lateinit var authUsernameInput: TextInputEditText
@@ -49,6 +50,7 @@ class MainActivity : AppCompatActivity() {
         config = Config(this)
 
         webhookUrlInput = findViewById(R.id.webhookUrl)
+        heartbeatUrlInput = findViewById(R.id.heartbeatUrl)
         sim1Input = findViewById(R.id.sim1Number)
         sim2Input = findViewById(R.id.sim2Number)
         authUsernameInput = findViewById(R.id.authUsername)
@@ -63,6 +65,7 @@ class MainActivity : AppCompatActivity() {
         handleIntentExtras(intent)
 
         webhookUrlInput.setText(config.webhookUrl)
+        heartbeatUrlInput.setText(config.heartbeatUrl)
         sim1Input.setText(config.sim1Number)
         sim2Input.setText(config.sim2Number)
         authUsernameInput.setText(config.authUsername)
@@ -83,6 +86,7 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         handleIntentExtras(intent)
         webhookUrlInput.setText(config.webhookUrl)
+        heartbeatUrlInput.setText(config.heartbeatUrl)
         sim1Input.setText(config.sim1Number)
         sim2Input.setText(config.sim2Number)
         updateUI()
@@ -112,6 +116,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun saveConfig() {
         config.webhookUrl = webhookUrlInput.text.toString().trim()
+        config.heartbeatUrl = heartbeatUrlInput.text.toString().trim()
         config.sim1Number = sim1Input.text.toString().trim()
         config.sim2Number = sim2Input.text.toString().trim()
         config.authUsername = authUsernameInput.text.toString().trim()
@@ -203,6 +208,7 @@ class MainActivity : AppCompatActivity() {
                 append("Service running")
                 append("\nDevice ID: ${config.deviceId}")
                 append("\nWebhook: ${config.webhookUrl}")
+                append("\nHeartbeat: ${config.heartbeatUrl.ifBlank { "(not set)" }}")
                 append("\nSIM 1: ${config.sim1Number.ifBlank { "(not set)" }}")
                 append("\nSIM 2: ${config.sim2Number.ifBlank { "(not set)" }}")
                 if (queued > 0) append("\nQueued: $queued messages pending")
@@ -225,13 +231,17 @@ class MainActivity : AppCompatActivity() {
     private fun handleIntentExtras(intent: Intent?) {
         intent ?: return
         val url = intent.getStringExtra("webhook_url")
+        val heartbeatUrl = intent.getStringExtra("heartbeat_url")
         val sim1 = intent.getStringExtra("sim1")
         val sim2 = intent.getStringExtra("sim2")
+        val apiKey = intent.getStringExtra("api_key")
         val autoStart = intent.getBooleanExtra("start", false)
 
         if (url != null) config.webhookUrl = url
+        if (heartbeatUrl != null) config.heartbeatUrl = heartbeatUrl
         if (sim1 != null) config.sim1Number = sim1
         if (sim2 != null) config.sim2Number = sim2
+        if (apiKey != null) config.authPassword = apiKey
 
         if (autoStart && config.isConfigured() && !config.serviceEnabled) {
             config.serviceEnabled = true

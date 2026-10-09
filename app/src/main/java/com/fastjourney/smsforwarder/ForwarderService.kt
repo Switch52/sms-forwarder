@@ -10,6 +10,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.ConnectivityManager
+import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Base64
@@ -20,12 +21,17 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 class ForwarderService : Service() {
 
     private lateinit var executor: ExecutorService
     private lateinit var wakeLock: PowerManager.WakeLock
     private val connectivityReceiver = ConnectivityReceiver()
+    private var heartbeatScheduler: ScheduledExecutorService? = null
+    private val heartbeatRunning = AtomicBoolean(false)
 
     override fun onCreate() {
         super.onCreate()
@@ -40,6 +46,7 @@ class ForwarderService : Service() {
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
         scheduleWatchdog()
+        startHeartbeatLoop()
 
         registerReceiver(
             connectivityReceiver,
@@ -52,6 +59,7 @@ class ForwarderService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_FLUSH_QUEUE -> executor.execute { flushQueue() }
+            ACTION_HEARTBEAT -> executor.execute { sendHeartbeat() }
             else -> {
                 val webhookUrl = intent?.getStringExtra(EXTRA_WEBHOOK_URL)
                 val payload = intent?.getStringExtra(EXTRA_PAYLOAD)
@@ -66,6 +74,7 @@ class ForwarderService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        stopHeartbeatLoop()
         try { unregisterReceiver(connectivityReceiver) } catch (_: Exception) {}
         if (::wakeLock.isInitialized && wakeLock.isHeld) wakeLock.release()
         executor.shutdownNow()
@@ -78,6 +87,64 @@ class ForwarderService : Service() {
 
         FileLog.log(this, "Service stopped")
         super.onDestroy()
+    }
+
+    private fun startHeartbeatLoop() {
+        if (heartbeatScheduler != null) return
+        heartbeatScheduler = Executors.newSingleThreadScheduledExecutor().also { scheduler ->
+            scheduler.scheduleAtFixedRate(
+                {
+                    if (Config(this).serviceEnabled) {
+                        sendHeartbeat()
+                    }
+                },
+                5,
+                HEARTBEAT_INTERVAL_SECONDS,
+                TimeUnit.SECONDS
+            )
+        }
+        // Immediate first beat
+        executor.execute { sendHeartbeat() }
+    }
+
+    private fun stopHeartbeatLoop() {
+        heartbeatScheduler?.shutdownNow()
+        heartbeatScheduler = null
+    }
+
+    private fun sendHeartbeat() {
+        if (!heartbeatRunning.compareAndSet(false, true)) return
+        try {
+            val config = Config(this)
+            val url = config.heartbeatUrl.trim()
+            if (url.isBlank()) return
+
+            val payload = JSONObject().apply {
+                put("deviceId", config.deviceId)
+                put(
+                    "deviceName",
+                    listOf(Build.MANUFACTURER, Build.MODEL)
+                        .filter { it.isNotBlank() }
+                        .joinToString(" ")
+                        .ifBlank { "Android" }
+                )
+                put("sim1Number", config.sim1Number.ifBlank { JSONObject.NULL })
+                put("sim2Number", config.sim2Number.ifBlank { JSONObject.NULL })
+            }.toString()
+
+            try {
+                val code = doPost(url, payload, config, forHeartbeat = true)
+                if (code in 200..299) {
+                    FileLog.log(this, "-> HEARTBEAT OK (HTTP $code)")
+                } else {
+                    FileLog.log(this, "!! HEARTBEAT HTTP $code")
+                }
+            } catch (e: Exception) {
+                FileLog.log(this, "!! HEARTBEAT error: ${e.javaClass.simpleName}: ${e.message}")
+            }
+        } finally {
+            heartbeatRunning.set(false)
+        }
     }
 
     private fun postWebhook(webhookUrl: String, payload: String) {
@@ -142,7 +209,12 @@ class ForwarderService : Service() {
         }
     }
 
-    private fun doPost(webhookUrl: String, payload: String, config: Config): Int {
+    private fun doPost(
+        webhookUrl: String,
+        payload: String,
+        config: Config,
+        forHeartbeat: Boolean = false,
+    ): Int {
         val url = URL(webhookUrl)
         val conn = url.openConnection() as HttpURLConnection
         conn.requestMethod = "POST"
@@ -150,6 +222,11 @@ class ForwarderService : Service() {
         conn.connectTimeout = 10_000
         conn.readTimeout = 10_000
         conn.doOutput = true
+
+        if (forHeartbeat && config.authPassword.isNotBlank()) {
+            // accounts-api requireApiKey expects x-api-key; reuse Auth Password as the API key.
+            conn.setRequestProperty("x-api-key", config.authPassword)
+        }
 
         if (config.hasAuth()) {
             val creds = "${config.authUsername}:${config.authPassword}"
@@ -232,6 +309,8 @@ class ForwarderService : Service() {
         const val EXTRA_PAYLOAD = "payload"
         const val ACTION_LOG_UPDATED = "com.fastjourney.smsforwarder.LOG_UPDATED"
         const val ACTION_FLUSH_QUEUE = "com.fastjourney.smsforwarder.FLUSH_QUEUE"
+        const val ACTION_HEARTBEAT = "com.fastjourney.smsforwarder.HEARTBEAT"
+        private const val HEARTBEAT_INTERVAL_SECONDS = 60L
         private const val TAG = "SmsForwarder"
 
         fun enqueueWebhook(context: Context, webhookUrl: String, payload: String) {
