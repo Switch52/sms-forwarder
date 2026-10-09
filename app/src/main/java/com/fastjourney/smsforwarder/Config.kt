@@ -2,16 +2,16 @@ package com.fastjourney.smsforwarder
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.provider.Settings
 
 class Config(context: Context) {
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences("sms_forwarder", Context.MODE_PRIVATE)
 
-    val deviceId: String = Settings.Secure.getString(
-        context.contentResolver, Settings.Secure.ANDROID_ID
-    ) ?: "unknown"
+    /** Hardware serial when readable (matches `adb devices`), else ANDROID_ID. */
+    val deviceId: String = DeviceIdentity.deviceId(context)
+
+    val deviceName: String = DeviceIdentity.deviceName()
 
     var webhookUrl: String
         get() = prefs.getString(
