@@ -22,12 +22,13 @@ You tell the app which phone number belongs to each SIM slot, and it includes th
 
 1. Open the app
 2. Enter your **Webhook URL** -- the server address where SMS messages should be sent
-3. Enter the phone number for **SIM 1** and/or **SIM 2** (use the full number with country code, e.g. `+971501234567`)
-4. Tap **Start Service**
-5. Grant all permissions when prompted (SMS, Phone, Notifications)
-6. **Disable battery optimization** -- see the section below
+3. Optional: enter **Heartbeat URL** -- accounts-api `POST /sms-devices/heartbeat` (e.g. `https://accounts-api.example/sms-devices/heartbeat`). Put the accounts-api API key in **Auth Password** (sent as `x-api-key`).
+4. Enter the phone number for **SIM 1** and/or **SIM 2** (use the full number with country code, e.g. `+971501234567`)
+5. Tap **Start Service**
+6. Grant all permissions when prompted (SMS, Phone, Notifications)
+7. **Disable battery optimization** -- see the section below
 
-That's it. The app will now forward every incoming SMS to your webhook.
+That's it. The app will now forward every incoming SMS to your webhook. With a heartbeat URL set, it also pings accounts-api every 60 seconds so the SMS live dashboard can mark the phone online/offline.
 
 ## IMPORTANT: Battery / Auto-Start Settings
 
@@ -95,6 +96,8 @@ You can configure and start the app from a computer without touching the phone s
 ```
 adb shell am start -n com.fastjourney.smsforwarder/.MainActivity \
   --es webhook_url "https://your-server.com/webhook" \
+  --es heartbeat_url "https://accounts-api.example/sms-devices/heartbeat" \
+  --es api_key "YOUR_ACCOUNTS_API_KEY" \
   --es sim1 "+971501234567" \
   --es sim2 "+971509876543" \
   --ez start true

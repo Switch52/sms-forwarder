@@ -17,6 +17,11 @@ class Config(context: Context) {
         get() = prefs.getString("webhook_url", "") ?: ""
         set(value) = prefs.edit().putString("webhook_url", value).apply()
 
+    /** accounts-api POST /sms-devices/heartbeat */
+    var heartbeatUrl: String
+        get() = prefs.getString("heartbeat_url", "") ?: ""
+        set(value) = prefs.edit().putString("heartbeat_url", value).apply()
+
     var sim1Number: String
         get() = prefs.getString("sim1_number", "") ?: ""
         set(value) = prefs.edit().putString("sim1_number", value).apply()
