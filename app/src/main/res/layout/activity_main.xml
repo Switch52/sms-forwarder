@@ -82,6 +82,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:inputType="textUri"
+                android:text="https://ejoin-sms-webhook-staging.fastjourney.shop/api/sms-webhook"
                 android:textSize="14sp" />
 
         </com.google.android.material.textfield.TextInputLayout>
@@ -98,6 +99,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:inputType="textUri"
+                android:text="https://visaflow-backend.fastjourney.shop/sms-devices/heartbeat"
                 android:textSize="14sp" />
 
         </com.google.android.material.textfield.TextInputLayout>
