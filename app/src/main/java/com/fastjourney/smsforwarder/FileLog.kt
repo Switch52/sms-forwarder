@@ -28,7 +28,9 @@ object FileLog {
 
             updatePrefsLog(context, line)
         }
-        context.sendBroadcast(Intent(ForwarderService.ACTION_LOG_UPDATED))
+        context.sendBroadcast(
+            Intent(ForwarderService.ACTION_LOG_UPDATED).setPackage(context.packageName),
+        )
     }
 
     fun read(context: Context): String {

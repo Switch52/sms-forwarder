@@ -314,7 +314,7 @@ class ForwarderService : Service() {
                     this,
                     ">> Config synced from API: SIM1=${config.sim1Number.ifBlank { "(empty)" }} SIM2=${config.sim2Number.ifBlank { "(empty)" }} handsOff=${config.handsOff}",
                 )
-                sendBroadcast(Intent(ACTION_LOG_UPDATED))
+                notifyUiConfigChanged()
             }
 
             val commands = data.optJSONArray("commands")
@@ -327,7 +327,7 @@ class ForwarderService : Service() {
                         }
                         "sync_config" -> {
                             FileLog.log(this, ">> Remote command: sync_config — refreshing UI")
-                            sendBroadcast(Intent(ACTION_LOG_UPDATED))
+                            notifyUiConfigChanged()
                         }
                         "restart" -> {
                             FileLog.log(this, ">> Remote command: restart — clearing learned SIM memory")
@@ -413,6 +413,10 @@ class ForwarderService : Service() {
             .setContentIntent(openIntent)
             .setOngoing(true)
             .build()
+    }
+
+    private fun notifyUiConfigChanged() {
+        sendBroadcast(Intent(ACTION_LOG_UPDATED).setPackage(packageName))
     }
 
     private fun scheduleRestart() {
