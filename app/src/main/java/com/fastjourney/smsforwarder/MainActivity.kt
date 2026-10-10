@@ -8,6 +8,8 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.widget.TextView
 import android.widget.Toast
@@ -40,17 +42,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var ackOemDone: MaterialButton
     private lateinit var ackRecentsDone: MaterialButton
 
+    private val uiHandler = Handler(Looper.getMainLooper())
+    private val configPoll = object : Runnable {
+        override fun run() {
+            applyRemoteConfigToUi()
+            uiHandler.postDelayed(this, CONFIG_POLL_MS)
+        }
+    }
+
     private val logReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            // Heartbeat may have pulled dashboard config — refresh fields + lock state.
-            config = Config(this@MainActivity)
-            webhookUrlInput.setText(config.webhookUrl)
-            heartbeatUrlInput.setText(config.heartbeatUrl)
-            sim1Input.setText(config.sim1Number)
-            sim2Input.setText(config.sim2Number)
-            authPasswordInput.setText(config.authPassword)
-            refreshLog()
-            updateUI()
+            applyRemoteConfigToUi()
         }
     }
 
@@ -136,14 +138,28 @@ class MainActivity : AppCompatActivity() {
             IntentFilter(ForwarderService.ACTION_LOG_UPDATED),
             Context.RECEIVER_NOT_EXPORTED
         )
-        refreshLog()
-        updateUI()
+        applyRemoteConfigToUi()
+        uiHandler.removeCallbacks(configPoll)
+        uiHandler.postDelayed(configPoll, CONFIG_POLL_MS)
     }
 
     override fun onPause() {
         super.onPause()
+        uiHandler.removeCallbacks(configPoll)
         unregisterReceiver(logReceiver)
         saveConfig()
+    }
+
+    private fun applyRemoteConfigToUi() {
+        if (!::webhookUrlInput.isInitialized) return
+        config = Config(this)
+        webhookUrlInput.setText(config.webhookUrl)
+        heartbeatUrlInput.setText(config.heartbeatUrl)
+        sim1Input.setText(config.sim1Number)
+        sim2Input.setText(config.sim2Number)
+        authPasswordInput.setText(config.authPassword)
+        refreshLog()
+        updateUI()
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -321,5 +337,9 @@ class MainActivity : AppCompatActivity() {
         if (missing.isNotEmpty()) {
             ActivityCompat.requestPermissions(this, missing.toTypedArray(), 100)
         }
+    }
+
+    companion object {
+        private const val CONFIG_POLL_MS = 2_000L
     }
 }
