@@ -264,12 +264,14 @@ class ForwarderService : Service() {
             val data = root.optJSONObject("data") ?: return
             val config = Config(this)
             var changed = false
+            var simsChanged = false
 
             if (data.has("sim1Number")) {
                 val remote = if (data.isNull("sim1Number")) "" else data.optString("sim1Number", "")
                 if (remote != config.sim1Number) {
                     config.sim1Number = remote
                     changed = true
+                    simsChanged = true
                 }
             }
             if (data.has("sim2Number")) {
@@ -277,6 +279,7 @@ class ForwarderService : Service() {
                 if (remote != config.sim2Number) {
                     config.sim2Number = remote
                     changed = true
+                    simsChanged = true
                 }
             }
             if (data.has("webhookUrl") && !data.isNull("webhookUrl")) {
@@ -301,6 +304,11 @@ class ForwarderService : Service() {
                 }
             }
 
+            if (simsChanged) {
+                config.clearLearnedCarrierNumbers()
+                FileLog.log(this, ">> Cleared learned carrier numbers (SIM config changed)")
+            }
+
             if (changed) {
                 FileLog.log(
                     this,
@@ -321,7 +329,8 @@ class ForwarderService : Service() {
                             FileLog.log(this, ">> Remote command: sync_config (already applied)")
                         }
                         "restart" -> {
-                            FileLog.log(this, ">> Remote command: restart")
+                            FileLog.log(this, ">> Remote command: restart — clearing learned SIM memory")
+                            config.clearLearnedCarrierNumbers()
                             scheduleRestart()
                             stopSelf()
                         }
