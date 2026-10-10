@@ -17,42 +17,59 @@ class Config(context: Context) {
         get() = prefs.getString("webhook_url", null)
             ?.takeIf { it.isNotBlank() }
             ?: DEFAULT_WEBHOOK_URL
-        set(value) = prefs.edit().putString("webhook_url", value).apply()
+        set(value) {
+            prefs.edit().putString("webhook_url", value).commit()
+        }
 
     /** accounts-api POST /sms-devices/heartbeat */
     var heartbeatUrl: String
         get() = prefs.getString("heartbeat_url", null)
             ?.takeIf { it.isNotBlank() }
             ?: DEFAULT_HEARTBEAT_URL
-        set(value) = prefs.edit().putString("heartbeat_url", value).apply()
+        set(value) {
+            prefs.edit().putString("heartbeat_url", value).commit()
+        }
 
     var sim1Number: String
         get() = prefs.getString("sim1_number", "") ?: ""
-        set(value) = prefs.edit().putString("sim1_number", value).apply()
+        set(value) {
+            prefs.edit().putString("sim1_number", value).commit()
+        }
 
     var sim2Number: String
         get() = prefs.getString("sim2_number", "") ?: ""
-        set(value) = prefs.edit().putString("sim2_number", value).apply()
+        set(value) {
+            prefs.edit().putString("sim2_number", value).commit()
+        }
 
     var authUsername: String
         get() = prefs.getString("auth_username", "") ?: ""
-        set(value) = prefs.edit().putString("auth_username", value).apply()
+        set(value) {
+            prefs.edit().putString("auth_username", value).commit()
+        }
 
     /** accounts-api x-api-key (Auth Password field). */
     var authPassword: String
         get() = prefs.getString("auth_password", null)
             ?.takeIf { it.isNotBlank() }
             ?: DEFAULT_API_KEY
-        set(value) = prefs.edit().putString("auth_password", value).apply()
+        set(value) {
+            prefs.edit().putString("auth_password", value).commit()
+        }
 
     var serviceEnabled: Boolean
         get() = prefs.getBoolean("service_enabled", false)
-        set(value) = prefs.edit().putBoolean("service_enabled", value).apply()
+        set(value) {
+            prefs.edit().putBoolean("service_enabled", value).commit()
+        }
 
     /** When true, local UI cannot change webhook/SIMs/API key — dashboard is source of truth. */
     var handsOff: Boolean
         get() = prefs.getBoolean("hands_off", false)
-        set(value) = prefs.edit().putBoolean("hands_off", value).apply()
+        set(value) {
+            // commit() so UI refresh after heartbeat sees the value immediately (apply() races).
+            prefs.edit().putBoolean("hands_off", value).commit()
+        }
 
     fun getNumberForSim(simIndex: Int): String {
         return when (simIndex) {
@@ -79,7 +96,7 @@ class Config(context: Context) {
 
     fun setLearnedNumberForCarrier(carrierKey: String, number: String) {
         if (carrierKey.isBlank() || number.isBlank()) return
-        prefs.edit().putString(carrierPrefKey(carrierKey), number.trim()).apply()
+        prefs.edit().putString(carrierPrefKey(carrierKey), number.trim()).commit()
     }
 
     /** Drop carrier→MSISDN memory so the next SMS re-learns from current SIM config. */
@@ -92,7 +109,7 @@ class Config(context: Context) {
                 removed++
             }
         }
-        if (removed > 0) editor.apply()
+        if (removed > 0) editor.commit()
     }
 
     private fun carrierPrefKey(carrierKey: String): String =

@@ -42,13 +42,15 @@ class MainActivity : AppCompatActivity() {
 
     private val logReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            // Heartbeat may have pulled dashboard config — refresh fields + log.
+            // Heartbeat may have pulled dashboard config — refresh fields + lock state.
             config = Config(this@MainActivity)
             webhookUrlInput.setText(config.webhookUrl)
+            heartbeatUrlInput.setText(config.heartbeatUrl)
             sim1Input.setText(config.sim1Number)
             sim2Input.setText(config.sim2Number)
             authPasswordInput.setText(config.authPassword)
             refreshLog()
+            updateUI()
         }
     }
 
