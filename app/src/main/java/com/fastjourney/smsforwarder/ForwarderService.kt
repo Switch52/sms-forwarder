@@ -268,68 +268,35 @@ class ForwarderService : Service() {
             val root = JSONObject(body)
             val data = root.optJSONObject("data") ?: return
             val config = Config(this)
-            var changed = false
-            var simsChanged = false
-
-            if (data.has("sim1Number")) {
-                val remote = if (data.isNull("sim1Number")) "" else data.optString("sim1Number", "")
-                if (remote != config.sim1Number) {
-                    config.sim1Number = remote
-                    changed = true
-                    simsChanged = true
-                }
-            }
-            if (data.has("sim2Number")) {
-                val remote = if (data.isNull("sim2Number")) "" else data.optString("sim2Number", "")
-                if (remote != config.sim2Number) {
-                    config.sim2Number = remote
-                    changed = true
-                    simsChanged = true
-                }
-            }
-            if (data.has("webhookUrl") && !data.isNull("webhookUrl")) {
-                val remote = data.optString("webhookUrl", "").trim()
-                if (remote.isNotBlank() && remote != config.webhookUrl) {
-                    config.webhookUrl = remote
-                    changed = true
-                }
-            }
-            if (data.has("heartbeatUrl") && !data.isNull("heartbeatUrl")) {
-                val remote = data.optString("heartbeatUrl", "").trim()
-                if (remote.isNotBlank() && remote != config.heartbeatUrl) {
-                    config.heartbeatUrl = remote
-                    changed = true
-                }
-            }
-            if (data.has("apiKey") && !data.isNull("apiKey")) {
-                val remote = data.optString("apiKey", "").trim()
-                if (remote.isNotBlank() && remote != config.authPassword) {
-                    config.authPassword = remote
-                    changed = true
-                }
-            }
-            if (data.has("handsOff")) {
-                val remote = data.optBoolean("handsOff", false)
-                if (remote != config.handsOff) {
-                    config.handsOff = remote
-                    changed = true
+            val commands = data.optJSONArray("commands")
+            var forceSync = false
+            if (commands != null) {
+                for (i in 0 until commands.length()) {
+                    if (commands.optString(i) == "sync_config") forceSync = true
                 }
             }
 
-            if (simsChanged) {
+            val applied = applyRemoteFields(config, data, force = forceSync)
+            if (applied.simsChanged || forceSync) {
                 config.clearLearnedCarrierNumbers()
-                FileLog.log(this, ">> Cleared learned carrier numbers (SIM config changed)")
-            }
-
-            if (changed) {
                 FileLog.log(
                     this,
-                    ">> Config synced from API: SIM1=${config.sim1Number.ifBlank { "(empty)" }} SIM2=${config.sim2Number.ifBlank { "(empty)" }} handsOff=${config.handsOff}",
+                    if (forceSync) {
+                        ">> Force sync: cleared learned SIMs and reapplied API config"
+                    } else {
+                        ">> Cleared learned carrier numbers (SIM config changed)"
+                    },
+                )
+            }
+
+            if (applied.changed || forceSync) {
+                FileLog.log(
+                    this,
+                    ">> Config synced from API: SIM1=${config.sim1Number.ifBlank { "(empty)" }} SIM2=${config.sim2Number.ifBlank { "(empty)" }} webhook=${config.webhookUrl} heartbeat=${config.heartbeatUrl} handsOff=${config.handsOff}",
                 )
                 notifyUiConfigChanged()
             }
 
-            val commands = data.optJSONArray("commands")
             if (commands != null) {
                 for (i in 0 until commands.length()) {
                     when (commands.optString(i)) {
@@ -338,8 +305,7 @@ class ForwarderService : Service() {
                             flushQueue()
                         }
                         "sync_config" -> {
-                            FileLog.log(this, ">> Remote command: sync_config — refreshing UI")
-                            notifyUiConfigChanged()
+                            FileLog.log(this, ">> Remote command: sync_config done")
                         }
                         "restart" -> {
                             FileLog.log(this, ">> Remote command: restart — clearing learned SIM memory")
@@ -353,6 +319,59 @@ class ForwarderService : Service() {
         } catch (e: Exception) {
             FileLog.log(this, "!! Config sync error: ${e.javaClass.simpleName}: ${e.message}")
         }
+    }
+
+    private data class RemoteApplyResult(val changed: Boolean, val simsChanged: Boolean)
+
+    private fun applyRemoteFields(config: Config, data: JSONObject, force: Boolean): RemoteApplyResult {
+        var changed = false
+        var simsChanged = false
+
+        if (data.has("sim1Number")) {
+            val remote = if (data.isNull("sim1Number")) "" else data.optString("sim1Number", "")
+            if (force || remote != config.sim1Number) {
+                if (remote != config.sim1Number) simsChanged = true
+                config.sim1Number = remote
+                changed = true
+            }
+        }
+        if (data.has("sim2Number")) {
+            val remote = if (data.isNull("sim2Number")) "" else data.optString("sim2Number", "")
+            if (force || remote != config.sim2Number) {
+                if (remote != config.sim2Number) simsChanged = true
+                config.sim2Number = remote
+                changed = true
+            }
+        }
+        if (data.has("webhookUrl") && !data.isNull("webhookUrl")) {
+            val remote = data.optString("webhookUrl", "").trim()
+            if (remote.isNotBlank() && (force || remote != config.webhookUrl)) {
+                config.webhookUrl = remote
+                changed = true
+            }
+        }
+        if (data.has("heartbeatUrl") && !data.isNull("heartbeatUrl")) {
+            val remote = data.optString("heartbeatUrl", "").trim()
+            if (remote.isNotBlank() && (force || remote != config.heartbeatUrl)) {
+                config.heartbeatUrl = remote
+                changed = true
+            }
+        }
+        if (data.has("apiKey") && !data.isNull("apiKey")) {
+            val remote = data.optString("apiKey", "").trim()
+            if (remote.isNotBlank() && (force || remote != config.authPassword)) {
+                config.authPassword = remote
+                changed = true
+            }
+        }
+        if (data.has("handsOff")) {
+            val remote = data.optBoolean("handsOff", false)
+            if (force || remote != config.handsOff) {
+                config.handsOff = remote
+                changed = true
+            }
+        }
+        return RemoteApplyResult(changed, simsChanged)
     }
 
     private data class HttpResult(val code: Int, val body: String?)
