@@ -157,11 +157,15 @@ class MainActivity : AppCompatActivity() {
     private fun applyRemoteConfigToUi() {
         if (!::webhookUrlInput.isInitialized) return
         config = Config(this)
-        webhookUrlInput.setText(config.webhookUrl)
-        heartbeatUrlInput.setText(config.heartbeatUrl)
-        sim1Input.setText(config.sim1Number)
-        sim2Input.setText(config.sim2Number)
-        authPasswordInput.setText(config.authPassword)
+        // Only push prefs into the form when hands-off (dashboard owns fields).
+        // Otherwise the 2s poll / log broadcast wipes in-progress local edits.
+        if (config.handsOff) {
+            webhookUrlInput.setText(config.webhookUrl)
+            heartbeatUrlInput.setText(config.heartbeatUrl)
+            sim1Input.setText(config.sim1Number)
+            sim2Input.setText(config.sim2Number)
+            authPasswordInput.setText(config.authPassword)
+        }
         refreshLog()
         updateUI()
     }

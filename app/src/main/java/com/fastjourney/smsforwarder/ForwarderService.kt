@@ -372,6 +372,20 @@ class ForwarderService : Service() {
         var changed = false
         var simsChanged = false
 
+        // Always accept handsOff so the dashboard can lock/unlock the device.
+        if (data.has("handsOff")) {
+            val remote = data.optBoolean("handsOff", false)
+            if (force || remote != config.handsOff) {
+                config.handsOff = remote
+                changed = true
+            }
+        }
+
+        // Local edits win unless hands-off or an explicit Force sync command.
+        if (!force && !config.handsOff) {
+            return RemoteApplyResult(changed, simsChanged)
+        }
+
         if (data.has("sim1Number")) {
             val remote = if (data.isNull("sim1Number")) "" else data.optString("sim1Number", "")
             if (force || remote != config.sim1Number) {
@@ -406,13 +420,6 @@ class ForwarderService : Service() {
             val remote = data.optString("apiKey", "").trim()
             if (remote.isNotBlank() && (force || remote != config.authPassword)) {
                 config.authPassword = remote
-                changed = true
-            }
-        }
-        if (data.has("handsOff")) {
-            val remote = data.optBoolean("handsOff", false)
-            if (force || remote != config.handsOff) {
-                config.handsOff = remote
                 changed = true
             }
         }
