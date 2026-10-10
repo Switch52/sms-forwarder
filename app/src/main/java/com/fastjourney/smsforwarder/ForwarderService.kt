@@ -326,7 +326,8 @@ class ForwarderService : Service() {
                             flushQueue()
                         }
                         "sync_config" -> {
-                            FileLog.log(this, ">> Remote command: sync_config (already applied)")
+                            FileLog.log(this, ">> Remote command: sync_config — refreshing UI")
+                            sendBroadcast(Intent(ACTION_LOG_UPDATED))
                         }
                         "restart" -> {
                             FileLog.log(this, ">> Remote command: restart — clearing learned SIM memory")
