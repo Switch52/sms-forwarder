@@ -82,6 +82,19 @@ class Config(context: Context) {
         prefs.edit().putString(carrierPrefKey(carrierKey), number.trim()).apply()
     }
 
+    /** Drop carrier→MSISDN memory so the next SMS re-learns from current SIM config. */
+    fun clearLearnedCarrierNumbers() {
+        val editor = prefs.edit()
+        var removed = 0
+        for (key in prefs.all.keys) {
+            if (key.startsWith("learned_carrier_")) {
+                editor.remove(key)
+                removed++
+            }
+        }
+        if (removed > 0) editor.apply()
+    }
+
     private fun carrierPrefKey(carrierKey: String): String =
         "learned_carrier_${carrierKey.lowercase().replace(Regex("[^a-z0-9]+"), "_")}"
 
