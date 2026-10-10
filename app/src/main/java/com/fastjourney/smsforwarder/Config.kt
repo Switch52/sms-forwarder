@@ -71,6 +71,13 @@ class Config(context: Context) {
             prefs.edit().putBoolean("hands_off", value).commit()
         }
 
+    /** Bumped whenever the service applies dashboard config, so the open form reloads instead of saving stale text. */
+    var configRevision: Int
+        get() = prefs.getInt("config_revision", 0)
+        set(value) {
+            prefs.edit().putInt("config_revision", value).commit()
+        }
+
     var updateVersionCode: Int
         get() = prefs.getInt("update_version_code", 0)
         set(value) {
