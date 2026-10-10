@@ -17,6 +17,8 @@ import android.os.PowerManager
 import android.util.Base64
 import android.util.Log
 import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
@@ -150,11 +152,12 @@ class ForwarderService : Service() {
             }.toString()
 
             try {
-                val code = doPost(url, payload, config, forHeartbeat = true)
-                if (code in 200..299) {
-                    FileLog.log(this, "-> HEARTBEAT OK (HTTP $code)")
+                val result = doPost(url, payload, config, forHeartbeat = true)
+                if (result.code in 200..299) {
+                    applySimConfigFromHeartbeat(result.body)
+                    FileLog.log(this, "-> HEARTBEAT OK (HTTP ${result.code})")
                 } else {
-                    FileLog.log(this, "!! HEARTBEAT HTTP $code")
+                    FileLog.log(this, "!! HEARTBEAT HTTP ${result.code}")
                 }
             } catch (e: Exception) {
                 FileLog.log(this, "!! HEARTBEAT error: ${e.javaClass.simpleName}: ${e.message}")
@@ -180,16 +183,16 @@ class ForwarderService : Service() {
 
         while (attempts < maxAttempts) {
             try {
-                val code = doPost(webhookUrl, payload, config)
+                val result = doPost(webhookUrl, payload, config)
 
-                if (code in 200..299) {
-                    FileLog.log(this, "-> SENT SIM$simNum from $sender (HTTP $code)")
-                    reportForwardedSms(config, payload, code)
+                if (result.code in 200..299) {
+                    FileLog.log(this, "-> SENT SIM$simNum from $sender (HTTP ${result.code})")
+                    reportForwardedSms(config, payload, result.code)
                     flushQueue()
                     return
                 }
 
-                FileLog.log(this, "!! Webhook HTTP $code, attempt ${attempts + 1}/$maxAttempts")
+                FileLog.log(this, "!! Webhook HTTP ${result.code}, attempt ${attempts + 1}/$maxAttempts")
                 attempts++
             } catch (e: Exception) {
                 FileLog.log(this, "!! Webhook error: ${e.javaClass.simpleName}: ${e.message}, attempt ${attempts + 1}/$maxAttempts")
@@ -212,11 +215,11 @@ class ForwarderService : Service() {
 
         for (payload in pending) {
             try {
-                val code = doPost(config.webhookUrl, payload, config)
-                if (code !in 200..299) {
+                val result = doPost(config.webhookUrl, payload, config)
+                if (result.code !in 200..299) {
                     MessageQueue.enqueue(this, payload)
                 } else {
-                    reportForwardedSms(config, payload, code)
+                    reportForwardedSms(config, payload, result.code)
                 }
             } catch (_: Exception) {
                 MessageQueue.enqueue(this, payload)
@@ -252,12 +255,50 @@ class ForwarderService : Service() {
         }
     }
 
+    /** Apply dashboard-edited SIM numbers returned by accounts-api heartbeat. */
+    private fun applySimConfigFromHeartbeat(body: String?) {
+        if (body.isNullOrBlank()) return
+        try {
+            val root = JSONObject(body)
+            val data = root.optJSONObject("data") ?: return
+            val config = Config(this)
+            var changed = false
+
+            if (data.has("sim1Number")) {
+                val remote = if (data.isNull("sim1Number")) "" else data.optString("sim1Number", "")
+                if (remote != config.sim1Number) {
+                    config.sim1Number = remote
+                    changed = true
+                }
+            }
+            if (data.has("sim2Number")) {
+                val remote = if (data.isNull("sim2Number")) "" else data.optString("sim2Number", "")
+                if (remote != config.sim2Number) {
+                    config.sim2Number = remote
+                    changed = true
+                }
+            }
+
+            if (changed) {
+                FileLog.log(
+                    this,
+                    ">> SIM config synced from API: SIM1=${config.sim1Number.ifBlank { "(empty)" }} SIM2=${config.sim2Number.ifBlank { "(empty)" }}",
+                )
+                sendBroadcast(Intent(ACTION_LOG_UPDATED))
+            }
+        } catch (e: Exception) {
+            FileLog.log(this, "!! SIM config sync error: ${e.javaClass.simpleName}: ${e.message}")
+        }
+    }
+
+    private data class HttpResult(val code: Int, val body: String?)
+
     private fun doPost(
         webhookUrl: String,
         payload: String,
         config: Config,
         forHeartbeat: Boolean = false,
-    ): Int {
+    ): HttpResult {
         val url = URL(webhookUrl)
         val conn = url.openConnection() as HttpURLConnection
         conn.requestMethod = "POST"
@@ -279,8 +320,18 @@ class ForwarderService : Service() {
 
         OutputStreamWriter(conn.outputStream).use { it.write(payload) }
         val code = conn.responseCode
+        val stream = try {
+            if (code in 200..299) conn.inputStream else conn.errorStream
+        } catch (_: Exception) {
+            null
+        }
+        val body = try {
+            stream?.let { BufferedReader(InputStreamReader(it)).use { r -> r.readText() } }
+        } catch (_: Exception) {
+            null
+        }
         conn.disconnect()
-        return code
+        return HttpResult(code, body)
     }
 
     private fun createNotificationChannel() {

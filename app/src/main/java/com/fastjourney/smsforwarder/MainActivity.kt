@@ -42,6 +42,10 @@ class MainActivity : AppCompatActivity() {
 
     private val logReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
+            // Heartbeat may have pulled dashboard SIM edits — refresh fields + log.
+            config = Config(this@MainActivity)
+            sim1Input.setText(config.sim1Number)
+            sim2Input.setText(config.sim2Number)
             refreshLog()
         }
     }
