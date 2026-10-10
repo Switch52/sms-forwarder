@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -30,6 +31,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var authUsernameInput: TextInputEditText
     private lateinit var authPasswordInput: TextInputEditText
     private lateinit var toggleButton: MaterialButton
+    private lateinit var checkUpdatesButton: MaterialButton
     private lateinit var statusText: TextView
     private lateinit var logText: TextView
     private lateinit var permissionWarning: MaterialCardView
@@ -69,6 +71,7 @@ class MainActivity : AppCompatActivity() {
         authUsernameInput = findViewById(R.id.authUsername)
         authPasswordInput = findViewById(R.id.authPassword)
         toggleButton = findViewById(R.id.toggleService)
+        checkUpdatesButton = findViewById(R.id.checkUpdates)
         statusText = findViewById(R.id.statusText)
         logText = findViewById(R.id.logText)
         permissionWarning = findViewById(R.id.permissionWarning)
@@ -91,6 +94,7 @@ class MainActivity : AppCompatActivity() {
         authPasswordInput.setText(config.authPassword)
 
         toggleButton.setOnClickListener { toggleService() }
+        checkUpdatesButton.setOnClickListener { openUpdateInstall() }
         grantPermissions.setOnClickListener {
             requestPermissions()
             KeepAliveHelper.runWizard(this)
@@ -296,6 +300,48 @@ class MainActivity : AppCompatActivity() {
             } else {
                 "Service stopped"
             }
+        }
+
+        refreshUpdateButton()
+    }
+
+    private fun installedVersionCode(): Int {
+        return try {
+            val info = packageManager.getPackageInfo(packageName, 0)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                info.longVersionCode.toInt()
+            } else {
+                @Suppress("DEPRECATION")
+                info.versionCode
+            }
+        } catch (_: Exception) {
+            0
+        }
+    }
+
+    private fun refreshUpdateButton() {
+        if (!::checkUpdatesButton.isInitialized) return
+        val available = config.hasUpdateAvailable(installedVersionCode())
+        checkUpdatesButton.isEnabled = available
+        checkUpdatesButton.text = if (available) {
+            val name = config.updateVersionName.ifBlank { "new version" }
+            "Install update $name"
+        } else {
+            "Check for updates"
+        }
+    }
+
+    private fun openUpdateInstall() {
+        if (!config.hasUpdateAvailable(installedVersionCode())) {
+            Toast.makeText(this, "No updates available", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val url = config.updateApkUrl
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            Toast.makeText(this, "Opening update download…", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Could not open update link", Toast.LENGTH_LONG).show()
         }
     }
 

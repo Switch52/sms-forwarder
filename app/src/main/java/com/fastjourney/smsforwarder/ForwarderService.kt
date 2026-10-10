@@ -276,6 +276,8 @@ class ForwarderService : Service() {
                 }
             }
 
+            applyAppUpdateOffer(config, data)
+
             val applied = applyRemoteFields(config, data, force = forceSync)
             if (applied.simsChanged || forceSync) {
                 config.clearLearnedCarrierNumbers()
@@ -322,6 +324,49 @@ class ForwarderService : Service() {
     }
 
     private data class RemoteApplyResult(val changed: Boolean, val simsChanged: Boolean)
+
+    private fun applyAppUpdateOffer(config: Config, data: JSONObject) {
+        val update = data.optJSONObject("appUpdate") ?: return
+        val versionCode = update.optInt("versionCode", 0)
+        val versionName = update.optString("versionName", "").trim()
+        val apkUrl = update.optString("apkUrl", "").trim()
+        if (versionCode <= 0 || apkUrl.isBlank()) return
+
+        var changed = false
+        if (config.updateVersionCode != versionCode) {
+            config.updateVersionCode = versionCode
+            changed = true
+        }
+        if (versionName.isNotBlank() && config.updateVersionName != versionName) {
+            config.updateVersionName = versionName
+            changed = true
+        }
+        if (config.updateApkUrl != apkUrl) {
+            config.updateApkUrl = apkUrl
+            changed = true
+        }
+        if (changed) {
+            val installed = readAppVersionCode()
+            if (versionCode > installed) {
+                FileLog.log(this, ">> Update available: $versionName ($versionCode) — tap Install update")
+            }
+            notifyUiConfigChanged()
+        }
+    }
+
+    private fun readAppVersionCode(): Int {
+        return try {
+            val info = packageManager.getPackageInfo(packageName, 0)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                info.longVersionCode.toInt()
+            } else {
+                @Suppress("DEPRECATION")
+                info.versionCode
+            }
+        } catch (_: Exception) {
+            0
+        }
+    }
 
     private fun applyRemoteFields(config: Config, data: JSONObject, force: Boolean): RemoteApplyResult {
         var changed = false

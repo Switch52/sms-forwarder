@@ -71,6 +71,28 @@ class Config(context: Context) {
             prefs.edit().putBoolean("hands_off", value).commit()
         }
 
+    var updateVersionCode: Int
+        get() = prefs.getInt("update_version_code", 0)
+        set(value) {
+            prefs.edit().putInt("update_version_code", value).commit()
+        }
+
+    var updateVersionName: String
+        get() = prefs.getString("update_version_name", "") ?: ""
+        set(value) {
+            prefs.edit().putString("update_version_name", value).commit()
+        }
+
+    var updateApkUrl: String
+        get() = prefs.getString("update_apk_url", "") ?: ""
+        set(value) {
+            prefs.edit().putString("update_apk_url", value).commit()
+        }
+
+    fun hasUpdateAvailable(installedVersionCode: Int): Boolean {
+        return updateVersionCode > installedVersionCode && updateApkUrl.isNotBlank()
+    }
+
     fun getNumberForSim(simIndex: Int): String {
         return when (simIndex) {
             0 -> sim1Number
