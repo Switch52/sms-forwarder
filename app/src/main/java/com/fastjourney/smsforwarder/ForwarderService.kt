@@ -149,12 +149,13 @@ class ForwarderService : Service() {
                 put("sim1Number", config.sim1Number.ifBlank { JSONObject.NULL })
                 put("sim2Number", config.sim2Number.ifBlank { JSONObject.NULL })
                 put("appVersion", readAppVersion())
+                put("appLog", FileLog.takeForUpload(this@ForwarderService))
             }.toString()
 
             try {
                 val result = doPost(url, payload, config, forHeartbeat = true)
                 if (result.code in 200..299) {
-                    applySimConfigFromHeartbeat(result.body)
+                    applyRemoteConfigFromHeartbeat(result.body)
                     FileLog.log(this, "-> HEARTBEAT OK (HTTP ${result.code})")
                 } else {
                     FileLog.log(this, "!! HEARTBEAT HTTP ${result.code}")
@@ -255,8 +256,8 @@ class ForwarderService : Service() {
         }
     }
 
-    /** Apply dashboard-edited SIM numbers returned by accounts-api heartbeat. */
-    private fun applySimConfigFromHeartbeat(body: String?) {
+    /** Apply dashboard config + run pending remote commands from heartbeat response. */
+    private fun applyRemoteConfigFromHeartbeat(body: String?) {
         if (body.isNullOrBlank()) return
         try {
             val root = JSONObject(body)
@@ -278,16 +279,57 @@ class ForwarderService : Service() {
                     changed = true
                 }
             }
+            if (data.has("webhookUrl") && !data.isNull("webhookUrl")) {
+                val remote = data.optString("webhookUrl", "").trim()
+                if (remote.isNotBlank() && remote != config.webhookUrl) {
+                    config.webhookUrl = remote
+                    changed = true
+                }
+            }
+            if (data.has("apiKey") && !data.isNull("apiKey")) {
+                val remote = data.optString("apiKey", "").trim()
+                if (remote.isNotBlank() && remote != config.authPassword) {
+                    config.authPassword = remote
+                    changed = true
+                }
+            }
+            if (data.has("handsOff")) {
+                val remote = data.optBoolean("handsOff", false)
+                if (remote != config.handsOff) {
+                    config.handsOff = remote
+                    changed = true
+                }
+            }
 
             if (changed) {
                 FileLog.log(
                     this,
-                    ">> SIM config synced from API: SIM1=${config.sim1Number.ifBlank { "(empty)" }} SIM2=${config.sim2Number.ifBlank { "(empty)" }}",
+                    ">> Config synced from API: SIM1=${config.sim1Number.ifBlank { "(empty)" }} SIM2=${config.sim2Number.ifBlank { "(empty)" }} handsOff=${config.handsOff}",
                 )
                 sendBroadcast(Intent(ACTION_LOG_UPDATED))
             }
+
+            val commands = data.optJSONArray("commands")
+            if (commands != null) {
+                for (i in 0 until commands.length()) {
+                    when (commands.optString(i)) {
+                        "flush_queue" -> {
+                            FileLog.log(this, ">> Remote command: flush_queue")
+                            flushQueue()
+                        }
+                        "sync_config" -> {
+                            FileLog.log(this, ">> Remote command: sync_config (already applied)")
+                        }
+                        "restart" -> {
+                            FileLog.log(this, ">> Remote command: restart")
+                            scheduleRestart()
+                            stopSelf()
+                        }
+                    }
+                }
+            }
         } catch (e: Exception) {
-            FileLog.log(this, "!! SIM config sync error: ${e.javaClass.simpleName}: ${e.message}")
+            FileLog.log(this, "!! Config sync error: ${e.javaClass.simpleName}: ${e.message}")
         }
     }
 

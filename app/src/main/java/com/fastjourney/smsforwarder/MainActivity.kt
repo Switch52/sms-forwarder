@@ -42,10 +42,12 @@ class MainActivity : AppCompatActivity() {
 
     private val logReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            // Heartbeat may have pulled dashboard SIM edits — refresh fields + log.
+            // Heartbeat may have pulled dashboard config — refresh fields + log.
             config = Config(this@MainActivity)
+            webhookUrlInput.setText(config.webhookUrl)
             sim1Input.setText(config.sim1Number)
             sim2Input.setText(config.sim2Number)
+            authPasswordInput.setText(config.authPassword)
             refreshLog()
         }
     }
@@ -148,6 +150,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun saveConfig() {
+        if (config.handsOff) return
         config.webhookUrl = webhookUrlInput.text.toString().trim()
         config.heartbeatUrl = heartbeatUrlInput.text.toString().trim()
         config.sim1Number = sim1Input.text.toString().trim()
@@ -156,7 +159,22 @@ class MainActivity : AppCompatActivity() {
         config.authPassword = authPasswordInput.text.toString().trim()
     }
 
+    private fun applyHandsOffUi() {
+        val locked = config.handsOff
+        webhookUrlInput.isEnabled = !locked
+        heartbeatUrlInput.isEnabled = !locked
+        sim1Input.isEnabled = !locked
+        sim2Input.isEnabled = !locked
+        authUsernameInput.isEnabled = !locked
+        authPasswordInput.isEnabled = !locked
+        toggleButton.isEnabled = !locked
+    }
+
     private fun toggleService() {
+        if (config.handsOff) {
+            Toast.makeText(this, "Hands-off mode: change settings from the dashboard", Toast.LENGTH_LONG).show()
+            return
+        }
         saveConfig()
 
         if (config.serviceEnabled) {
@@ -209,6 +227,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateUI() {
+        config = Config(this)
+        applyHandsOffUi()
         val queued = MessageQueue.size(this)
         val missing = getMissingPermissions()
         val batteryOptimized = KeepAliveHelper.isBatteryOptimized(this)
@@ -236,9 +256,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (config.serviceEnabled) {
-            toggleButton.text = "Stop Service"
+            toggleButton.text = if (config.handsOff) "Hands-off (dashboard managed)" else "Stop Service"
             statusText.text = buildString {
                 append("Service running")
+                if (config.handsOff) append("\nHANDS-OFF: settings locked — edit from dashboard")
                 append("\nDevice: ${config.deviceName}")
                 append("\nDevice ID: ${config.deviceId}")
                 append("\nWebhook: ${config.webhookUrl}")
@@ -252,7 +273,11 @@ class MainActivity : AppCompatActivity() {
             }
         } else {
             toggleButton.text = "Start Service"
-            statusText.text = "Service stopped"
+            statusText.text = if (config.handsOff) {
+                "Service stopped (hands-off — start from dashboard restart command after enabling locally once)"
+            } else {
+                "Service stopped"
+            }
         }
     }
 

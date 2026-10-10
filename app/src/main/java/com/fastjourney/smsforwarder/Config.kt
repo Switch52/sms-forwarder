@@ -49,6 +49,11 @@ class Config(context: Context) {
         get() = prefs.getBoolean("service_enabled", false)
         set(value) = prefs.edit().putBoolean("service_enabled", value).apply()
 
+    /** When true, local UI cannot change webhook/SIMs/API key — dashboard is source of truth. */
+    var handsOff: Boolean
+        get() = prefs.getBoolean("hands_off", false)
+        set(value) = prefs.edit().putBoolean("hands_off", value).apply()
+
     fun getNumberForSim(simIndex: Int): String {
         return when (simIndex) {
             0 -> sim1Number
