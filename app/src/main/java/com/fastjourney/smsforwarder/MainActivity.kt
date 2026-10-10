@@ -282,7 +282,7 @@ class MainActivity : AppCompatActivity() {
             statusText.text = buildString {
                 append("Service running")
                 if (config.handsOff) append("\nHANDS-OFF: settings locked — edit from dashboard")
-                append("\nApp: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+                append("\nApp: ${installedVersionLabel()}")
                 append("\nDevice: ${config.deviceName}")
                 append("\nDevice ID: ${config.deviceId}")
                 append("\nWebhook: ${config.webhookUrl}")
@@ -317,6 +317,15 @@ class MainActivity : AppCompatActivity() {
             }
         } catch (_: Exception) {
             0
+        }
+    }
+
+    private fun installedVersionLabel(): String {
+        return try {
+            val info = packageManager.getPackageInfo(packageName, 0)
+            "${info.versionName} (${installedVersionCode()})"
+        } catch (_: Exception) {
+            "unknown"
         }
     }
 
