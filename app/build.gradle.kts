@@ -11,8 +11,8 @@ android {
         applicationId = "com.fastjourney.smsforwarder"
         minSdk = 26
         targetSdk = 34
-        versionCode = 28
-        versionName = "1.9.3"
+        versionCode = 29
+        versionName = "1.9.4"
     }
 
     signingConfigs {
