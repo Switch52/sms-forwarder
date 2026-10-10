@@ -36,6 +36,14 @@ object FileLog {
         return if (file.exists()) file.readText() else ""
     }
 
+    /** Newest-first lines for heartbeat upload (capped). */
+    fun takeForUpload(context: Context, maxLines: Int = 80, maxChars: Int = 24_000): String {
+        val text = read(context)
+        if (text.isBlank()) return ""
+        val clipped = text.lines().take(maxLines).joinToString("\n")
+        return if (clipped.length <= maxChars) clipped else clipped.take(maxChars)
+    }
+
     private fun logFile(context: Context): File {
         val dir = File(context.getExternalFilesDir(null), "logs")
         dir.mkdirs()
