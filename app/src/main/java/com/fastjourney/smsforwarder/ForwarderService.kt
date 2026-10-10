@@ -292,6 +292,7 @@ class ForwarderService : Service() {
             }
 
             if (applied.changed || forceSync) {
+                config.configRevision = config.configRevision + 1
                 FileLog.log(
                     this,
                     ">> Config synced from API: SIM1=${config.sim1Number.ifBlank { "(empty)" }} SIM2=${config.sim2Number.ifBlank { "(empty)" }} webhook=${config.webhookUrl} heartbeat=${config.heartbeatUrl} handsOff=${config.handsOff}",

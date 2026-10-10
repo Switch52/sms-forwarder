@@ -44,6 +44,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var ackOemDone: MaterialButton
     private lateinit var ackRecentsDone: MaterialButton
 
+    private var seenConfigRevision = -1
     private val uiHandler = Handler(Looper.getMainLooper())
     private val configPoll = object : Runnable {
         override fun run() {
@@ -85,13 +86,7 @@ class MainActivity : AppCompatActivity() {
         ackRecentsDone = findViewById(R.id.ackRecentsDone)
 
         handleIntentExtras(intent)
-
-        webhookUrlInput.setText(config.webhookUrl)
-        heartbeatUrlInput.setText(config.heartbeatUrl)
-        sim1Input.setText(config.sim1Number)
-        sim2Input.setText(config.sim2Number)
-        authUsernameInput.setText(config.authUsername)
-        authPasswordInput.setText(config.authPassword)
+        loadFormFromConfig()
 
         toggleButton.setOnClickListener { toggleService() }
         checkUpdatesButton.setOnClickListener { openUpdateInstall() }
@@ -128,10 +123,7 @@ class MainActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         handleIntentExtras(intent)
-        webhookUrlInput.setText(config.webhookUrl)
-        heartbeatUrlInput.setText(config.heartbeatUrl)
-        sim1Input.setText(config.sim1Number)
-        sim2Input.setText(config.sim2Number)
+        loadFormFromConfig()
         updateUI()
     }
 
@@ -157,20 +149,24 @@ class MainActivity : AppCompatActivity() {
     private fun applyRemoteConfigToUi() {
         if (!::webhookUrlInput.isInitialized) return
         config = Config(this)
-        // Only push prefs into the form when hands-off (dashboard owns fields).
-        // Otherwise the 2s poll / log broadcast wipes in-progress local edits.
-        // Persist the form so heartbeats upload current values to the dashboard.
         if (config.handsOff) {
-            webhookUrlInput.setText(config.webhookUrl)
-            heartbeatUrlInput.setText(config.heartbeatUrl)
-            sim1Input.setText(config.sim1Number)
-            sim2Input.setText(config.sim2Number)
-            authPasswordInput.setText(config.authPassword)
+            loadFormFromConfig()
         } else {
             saveConfig()
         }
         refreshLog()
         updateUI()
+    }
+
+    private fun loadFormFromConfig() {
+        config = Config(this)
+        webhookUrlInput.setText(config.webhookUrl)
+        heartbeatUrlInput.setText(config.heartbeatUrl)
+        sim1Input.setText(config.sim1Number)
+        sim2Input.setText(config.sim2Number)
+        authUsernameInput.setText(config.authUsername)
+        authPasswordInput.setText(config.authPassword)
+        seenConfigRevision = config.configRevision
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -179,13 +175,28 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun saveConfig() {
+        config = Config(this)
         if (config.handsOff) return
-        config.webhookUrl = webhookUrlInput.text.toString().trim()
-        config.heartbeatUrl = heartbeatUrlInput.text.toString().trim()
-        config.sim1Number = sim1Input.text.toString().trim()
-        config.sim2Number = sim2Input.text.toString().trim()
-        config.authUsername = authUsernameInput.text.toString().trim()
-        config.authPassword = authPasswordInput.text.toString().trim()
+        if (config.configRevision != seenConfigRevision) {
+            loadFormFromConfig()
+            return
+        }
+        val webhook = webhookUrlInput.text.toString().trim()
+        val heartbeat = heartbeatUrlInput.text.toString().trim()
+        val sim1 = sim1Input.text.toString().trim()
+        val sim2 = sim2Input.text.toString().trim()
+        val user = authUsernameInput.text.toString().trim()
+        val pass = authPasswordInput.text.toString().trim()
+
+        if (sim1 != config.sim1Number || sim2 != config.sim2Number) {
+            config.sim1Number = sim1
+            config.sim2Number = sim2
+            config.clearLearnedCarrierNumbers()
+        }
+        if (webhook != config.webhookUrl) config.webhookUrl = webhook
+        if (heartbeat != config.heartbeatUrl) config.heartbeatUrl = heartbeat
+        if (user != config.authUsername) config.authUsername = user
+        if (pass != config.authPassword) config.authPassword = pass
     }
 
     private fun applyHandsOffUi() {
