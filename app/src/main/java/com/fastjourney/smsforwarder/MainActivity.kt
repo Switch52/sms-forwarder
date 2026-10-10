@@ -282,6 +282,7 @@ class MainActivity : AppCompatActivity() {
             statusText.text = buildString {
                 append("Service running")
                 if (config.handsOff) append("\nHANDS-OFF: settings locked — edit from dashboard")
+                append("\nApp: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
                 append("\nDevice: ${config.deviceName}")
                 append("\nDevice ID: ${config.deviceId}")
                 append("\nWebhook: ${config.webhookUrl}")
