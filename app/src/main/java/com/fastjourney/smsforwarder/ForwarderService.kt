@@ -148,6 +148,8 @@ class ForwarderService : Service() {
                 put("deviceName", config.deviceName)
                 put("sim1Number", config.sim1Number.ifBlank { JSONObject.NULL })
                 put("sim2Number", config.sim2Number.ifBlank { JSONObject.NULL })
+                put("webhookUrl", config.webhookUrl.ifBlank { JSONObject.NULL })
+                put("heartbeatUrl", config.heartbeatUrl.ifBlank { JSONObject.NULL })
                 put("appVersion", readAppVersion())
                 put("appLog", FileLog.takeForUpload(this@ForwarderService))
             }.toString()
@@ -209,10 +211,13 @@ class ForwarderService : Service() {
 
     private fun flushQueue() {
         val config = Config(this)
-        val pending = MessageQueue.drainAll(this)
-        if (pending.isEmpty()) return
+        val pending = MessageQueue.drainRecent(this, MessageQueue.FLUSH_MAX_AGE_MS)
+        if (pending.isEmpty()) {
+            FileLog.log(this, "Flush queue: nothing queued in the last 60s")
+            return
+        }
 
-        FileLog.log(this, "Flushing ${pending.size} queued messages")
+        FileLog.log(this, "Flushing ${pending.size} queued message(s) from the last 60s")
 
         for (payload in pending) {
             try {
@@ -286,6 +291,13 @@ class ForwarderService : Service() {
                 val remote = data.optString("webhookUrl", "").trim()
                 if (remote.isNotBlank() && remote != config.webhookUrl) {
                     config.webhookUrl = remote
+                    changed = true
+                }
+            }
+            if (data.has("heartbeatUrl") && !data.isNull("heartbeatUrl")) {
+                val remote = data.optString("heartbeatUrl", "").trim()
+                if (remote.isNotBlank() && remote != config.heartbeatUrl) {
+                    config.heartbeatUrl = remote
                     changed = true
                 }
             }
