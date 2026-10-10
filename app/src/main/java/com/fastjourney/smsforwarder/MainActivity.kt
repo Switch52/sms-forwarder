@@ -159,12 +159,15 @@ class MainActivity : AppCompatActivity() {
         config = Config(this)
         // Only push prefs into the form when hands-off (dashboard owns fields).
         // Otherwise the 2s poll / log broadcast wipes in-progress local edits.
+        // Persist the form so heartbeats upload current values to the dashboard.
         if (config.handsOff) {
             webhookUrlInput.setText(config.webhookUrl)
             heartbeatUrlInput.setText(config.heartbeatUrl)
             sim1Input.setText(config.sim1Number)
             sim2Input.setText(config.sim2Number)
             authPasswordInput.setText(config.authPassword)
+        } else {
+            saveConfig()
         }
         refreshLog()
         updateUI()
