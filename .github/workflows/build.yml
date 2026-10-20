@@ -46,3 +46,16 @@ jobs:
           name: Build ${{ github.run_number }}
           files: app/build/outputs/apk/release/app-release.apk
           generate_release_notes: true
+
+      - name: Publish public APK
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          aws s3 cp app/build/outputs/apk/release/app-release.apk \
+            s3://liveness-bucket-788070448097-us-east-1-an/apps/sms-forwarder.apk \
+            --content-type application/vnd.android.package-archive \
+            --content-disposition 'attachment; filename="sms-forwarder.apk"' \
+            --cache-control 'public, max-age=300'
